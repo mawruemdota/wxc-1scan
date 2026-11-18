@@ -43,7 +43,7 @@ export async function GET(req: NextRequest) {
       status: 200,
       headers: {
         'Content-Type': 'text/csv; charset=utf-8',
-        'Content-Disposition': `attachment; filename="claims-${date}.csv"`,
+        'Content-Disposition': `attachment; filename="1scan-claims-${date}.csv"`,
         'Cache-Control': 'private, no-store',
         'X-Content-Type-Options': 'nosniff'
       }

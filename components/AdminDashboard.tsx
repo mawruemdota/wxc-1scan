@@ -249,7 +249,7 @@ export default function AdminDashboard({ initiallyAuthenticated }: { initiallyAu
   function downloadSelected(pass: Pass) {
     const canvas = document.getElementById('qr-current') as HTMLCanvasElement | null;
     if (!canvas) { setError('QR image is still rendering. Try again.'); return; }
-    const a = document.createElement('a'); a.href = canvas.toDataURL('image/png'); a.download = `qr-pass-${pass.id}.png`; a.click();
+    const a = document.createElement('a'); a.href = canvas.toDataURL('image/png'); a.download = `1scan-qr-pass-${pass.id}.png`; a.click();
   }
   async function bulkZip() {
     const exportable = data?.passes.filter(pass => displayStatus(pass, Date.now() + skew) === 'unused') || [];
@@ -262,10 +262,10 @@ export default function AdminDashboard({ initiallyAuthenticated }: { initiallyAu
         if (!canvas) throw new Error(`QR #${pass.id} is not ready. Refresh and try again.`);
         const base64 = canvas.toDataURL('image/png').split(',')[1];
         const bytes = Uint8Array.from(atob(base64), letter => letter.charCodeAt(0));
-        return { name: `qr-pass-${pass.id}.png`, data: bytes };
+        return { name: `1scan-qr-pass-${pass.id}.png`, data: bytes };
       });
       const bytes = zipFiles(entries);
-      startDownload(new Blob([bytes.buffer as ArrayBuffer], { type: 'application/zip' }), `qr-passes-page-${page + 1}.zip`);
+      startDownload(new Blob([bytes.buffer as ArrayBuffer], { type: 'application/zip' }), `1scan-qr-passes-page-${page + 1}.zip`);
       setNotice(`Downloaded ${entries.length} available QR PNGs from this page. ZIP contains no personal details.`);
     } catch (e) { setError(e instanceof Error ? e.message : 'Unable to create QR ZIP'); }
     finally { setBusy(null); }
@@ -279,7 +279,7 @@ export default function AdminDashboard({ initiallyAuthenticated }: { initiallyAu
         const body = await res.json();
         throw new Error(res.status === 413 ? 'Export exceeds the 10,000-row limit. Narrow the search.' : (body.reason || 'Could not export claims.'));
       }
-      const name = res.headers.get('Content-Disposition')?.match(/filename="([^"]+)"/)?.[1] || 'claims.csv';
+      const name = res.headers.get('Content-Disposition')?.match(/filename="([^"]+)"/)?.[1] || '1scan-claims.csv';
       startDownload(await res.blob(), name);
       setNotice('Claim log exported. Store the CSV securely because it includes personal information and IP addresses.');
     } catch (e) { setError(e instanceof Error ? e.message : 'Could not export claims'); }
@@ -289,7 +289,7 @@ export default function AdminDashboard({ initiallyAuthenticated }: { initiallyAu
   if (!authed) return <main className="flex min-h-screen items-center justify-center bg-[#F3F7F6] px-4 py-10">
     <form onSubmit={login} className="w-full max-w-md rounded-[26px] border border-[#E2EAE8] bg-white p-8 shadow-[0_20px_80px_rgba(10,44,47,0.07)] sm:p-10">
       <div className="mb-7 inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-[#0A3939] text-white"><Icon name="qr" className="h-7 w-7" /></div>
-      <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#0E8270]">Restricted control center</p>
+      <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#0E8270]">1scan · Restricted control center</p>
       <h1 className="mt-2 text-3xl font-bold tracking-tight text-[#143239]">Welcome back</h1>
       <p className="mb-8 mt-2 text-sm text-[#76878C]">Sign in to manage QR passes and verified claims.</p>
       <label htmlFor="admin-password" className="block text-sm font-semibold text-[#284249]">Admin password</label>
@@ -311,7 +311,7 @@ export default function AdminDashboard({ initiallyAuthenticated }: { initiallyAu
   return <div className="min-h-screen bg-[#F5F8F8] text-[#173239] lg:flex">
     <aside className="bg-[#102E32] text-[#E8F0EF] lg:sticky lg:top-0 lg:flex lg:h-screen lg:w-[238px] lg:flex-shrink-0 lg:flex-col">
       <div className="flex items-center justify-between gap-2 px-5 py-5 lg:px-6 lg:py-7">
-        <div className="flex items-center gap-3"><div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#1D7069] text-white"><Icon name="qr" className="h-6 w-6" /></div><div><p className="text-[15px] font-bold tracking-tight">First-to-Scan</p><p className="text-[11px] font-medium tracking-wide text-[#93BAB8]">CONTROL CENTER</p></div></div>
+        <div className="flex items-center gap-3"><div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#1D7069] text-white"><Icon name="qr" className="h-6 w-6" /></div><div><p className="text-[15px] font-bold tracking-tight">1scan</p><p className="text-[11px] font-medium tracking-wide text-[#93BAB8]">CONTROL CENTER</p></div></div>
         <button type="button" aria-label="Toggle navigation" aria-expanded={mobileNav} className="rounded-lg p-2 text-[#C7DCDD] hover:bg-white/10 lg:hidden" onClick={() => setMobileNav(!mobileNav)}><Icon name="menu" className="h-5 w-5" /></button>
       </div>
       <nav aria-label="Admin navigation" className={`${mobileNav ? 'flex' : 'hidden'} gap-1 px-3 pb-4 lg:mt-7 lg:flex lg:flex-col lg:px-3`}>
@@ -389,7 +389,7 @@ export default function AdminDashboard({ initiallyAuthenticated }: { initiallyAu
           </section>
           <section className="space-y-5"><div className="rounded-[22px] border border-[#E1E9E9] bg-white p-6"><p className="text-sm font-medium text-[#7D9194]">Registered usernames</p><p className="mt-3 text-4xl font-bold tracking-tight text-[#163B3F]">{data ? data.allowedPlayerCount.toLocaleString() : '—'}</p><p className="mt-2 text-xs text-[#8B9C9F]">Eligible for claim verification</p></div><div className="rounded-[20px] border border-[#E1E9E9] bg-white p-6"><h3 className="text-base font-bold">Sample file format</h3><pre className="mt-4 overflow-x-auto rounded-xl bg-[#17343A] p-4 text-xs leading-6 text-[#DBF6EB]">username{'\n'}player_one{'\n'}player_two{'\n'}player_three</pre><p className="mt-3 text-xs leading-5 text-[#899A9C]">The first column is used if a CSV does not contain a username header. Existing entries remain unchanged.</p></div></section>
         </div>}
-        <footer className="mt-8 flex flex-wrap items-center justify-between gap-2 border-t border-[#E2ECEB] pt-5 text-[11px] text-[#91A2A4]"><span>First-to-Scan · Administrative control center</span><span>Private player data · Asia/Manila timezone</span></footer>
+        <footer className="mt-8 flex flex-wrap items-center justify-between gap-2 border-t border-[#E2ECEB] pt-5 text-[11px] text-[#91A2A4]"><span>1scan · Administrative control center</span><span>Private player data · Asia/Manila timezone</span></footer>
       </div>
     </main>
 

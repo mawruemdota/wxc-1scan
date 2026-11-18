@@ -1,4 +1,4 @@
-# First-to-Scan QR Pass & Verification
+# 1scan — QR Pass & Verification
 
 ## Current 1scan deployment — shared 1xb Supabase project
 
@@ -38,7 +38,7 @@ A Next.js 15 App Router/TypeScript/Tailwind web app with **Supabase PostgreSQL**
 
 ## 1. Install locally
 
-Requirements: Node.js 22 LTS (or supported Node.js 20 LTS), npm, a **dedicated** Supabase project, and a GitHub account.
+Requirements: Node.js 22 LTS (or supported Node.js 20 LTS), npm, and the configured Supabase project.
 
 ```bash
 npm install
@@ -54,23 +54,19 @@ npm run lint
 npm run build
 ```
 
-## 2. Configure Supabase (do not use your existing unrelated projects)
+## 2. Configure Supabase (existing 1xb shared project)
 
-1. Create a new Supabase project in the region closest to your audience (for the Philippines, usually Singapore / `ap-southeast-1`).
-2. In **Supabase > SQL Editor**, run these files **in order**:
-   - `supabase/migrations/20261118000000_initial.sql`
-   - `supabase/migrations/20261118010000_critical_fixes.sql`
+1scan currently uses Supabase project **1xb** (ref `cedxzjijdboojwjvkxqv`) with isolated `one_scan_*` tables and RPC functions. The SQL in `supabase/1xb_shared/` has already been applied. **Do not rerun these migrations in 1xb.** The original unprefixed files in `supabase/migrations/` are only for a fresh, dedicated project.
 
-   The second migration adds private receipt ownership records, new recovery and throttling RPCs, and updated atomic lock/claim logic. **For existing installations, apply only the second migration**. Claims completed before this migration cannot retroactively receive a session-based receipt because the earlier schema did not preserve their ownership proof.
-3. On a **dedicated test project only**, run `supabase/tests/smoke.sql` and `supabase/tests/critical_fixes.sql`. Both roll back test data. The latter checks claimed-session receipt recovery, idempotent reclaims, and rate-limit denial behavior.
-4. Copy the **Project URL** and **service_role** secret (or appropriate compatible secret key) from **Project Settings > API Keys** into `.env.local`. Do not publish this key, commit `.env.local`, or use `NEXT_PUBLIC_` for the secret.
-5. Set `ADMIN_PASSWORD` to a unique, randomly generated password at least 16 characters long, e.g. `openssl rand -base64 36`. The admin cookie signing key is derived from it; rotating this password invalidates prior admin sessions.
+For local development, create `.env.local` with the project URL and a valid server-side service-role key from the 1xb Supabase API Keys settings. Do not commit secrets or prefix the server key with `NEXT_PUBLIC_`.
 
 ```dotenv
-NEXT_PUBLIC_SUPABASE_URL=https://YOUR_PROJECT.supabase.co
-SUPABASE_SERVICE_ROLE_KEY=YOUR_SERVICE_ROLE_SECRET
+NEXT_PUBLIC_SUPABASE_URL=https://cedxzjijdboojwjvkxqv.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=YOUR_SERVER_SIDE_SECRET
 ADMIN_PASSWORD=YOUR_LONG_RANDOM_PASSWORD
 ```
+
+`ADMIN_PASSWORD` must contain at least 16 characters. Rotating it invalidates existing admin sessions.
 
 Start the development app:
 
@@ -81,46 +77,19 @@ npm run dev
 
 **Local IP behavior:** all requests in development are identified as `127.0.0.1` unless run on Vercel. This prevents meaningful multi-IP local testing; use a Vercel preview deployment or a controlled test harness to verify distinct IPs. Production refuses to read untrusted forwarding headers outside Vercel.
 
-## 3. Create a GitHub repository
+## 3. GitHub repository
 
-The attached build is structured as a Git repository but was not automatically created on GitHub, because the available GitHub integration supports existing-repository edits but not repository creation.
+Source repository: [mawruemdota/wxc-1scan](https://github.com/mawruemdota/wxc-1scan). The production branch is `main`, and Vercel automatically deploys new commits.
 
-Create a **private** empty repository named `first-to-scan-qr` in GitHub (do **not** initialize it with a README). Then, in the unzipped project folder:
+## 4. Vercel deployment
 
-```bash
-git init
-git branch -M main
-git add .
-git commit -m "Initial first-to-scan QR pass application"
-git remote add origin https://github.com/YOUR_GITHUB_USERNAME/first-to-scan-qr.git
-git push -u origin main
-```
+Vercel project: [1scan](https://vercel.com/wxc4/1scan).
+Live website: [1scan.vercel.app](https://1scan.vercel.app).
+Admin dashboard: [1scan.vercel.app/admin](https://1scan.vercel.app/admin).
 
-If using the GitHub CLI on your own machine, create it and push in one flow:
+Set the three environment variables listed above in the production environment. **Store API secrets only in Vercel**, never in GitHub. Redeploy after changing environment variables.
 
-```bash
-gh auth login
-gh repo create first-to-scan-qr --private --source=. --remote=origin --push
-```
-
-The latter assumes you already committed with Git and did not set a remote.
-
-## 4. Deploy to Vercel
-
-1. In **Vercel > Add New Project**, import your GitHub `first-to-scan-qr` repository.
-2. Framework preset: **Next.js**. Root directory: `/`.
-3. Add the three environment variables shown above to **Production** and **Preview** (prefer a different Supabase project for staging if sharing preview URLs).
-4. Deploy. Vercel automatically supplies the trusted `x-vercel-forwarded-for` / `x-forwarded-for` request headers. Do not modify or trust XFF from arbitrary third-party proxies.
-5. Open `https://YOUR-VERCEL-DOMAIN/admin`; log in and import a CSV with a `username` column, e.g.:
-
-```csv
-username
-player_one
-player_two
-```
-
-6. Generate a single QR pass; download and scan the PNG from a phone using the production domain. Confirm that the first eligible visitor gets the lock, another visitor sees `reserved`, and that a successful claim becomes `claimed` in the admin dashboard.
-7. Configure a custom domain in Vercel if needed. QR URLs generated in `/admin` always use the host currently open in the browser, so **generate/download final QR codes from the final custom domain**.
+To verify claims, log in, import a CSV with a `username` column, and generate a test QR pass. Its first eligible scan should acquire a five-minute lock; a second scanner should see a reservation error; a completed claim must remain permanent. Generate final QR links using the intended production domain.
 
 ## 5. Routes & contracts
 
@@ -140,7 +109,7 @@ All mutating routes check same-origin `Origin`. Session tokens are random 256-bi
 
 ## 6. Security/operational limitations to understand before production
 
-1. **“First to scan” really means first eligible browser request to successfully reach `POST /api/lock`.** Initial HTML fetch, QR camera preview, and link-preview fetches alone don't reserve. JS-capable automated browsers **can** reserve passes; no JavaScript detection is a guaranteed anti-bot mechanism.
+1. **The first scan is the first eligible browser request to successfully reach `POST /api/lock`.** Initial HTML fetch, QR camera preview, and link-preview fetches alone don't reserve. JS-capable automated browsers **can** reserve passes; no JavaScript detection is a guaranteed anti-bot mechanism.
 2. **Public IP limits are shared.** Anyone on the same venue Wi-Fi, corporate NAT, or carrier-grade NAT may share one public IP, so the requested once-per-day IP restriction will block additional legitimate participants. Consider making IP a secondary abuse signal instead of a hard daily uniqueness rule if this is a public event. VPN/mobile-network changes can also alter results.
 3. **Pseudonymous registrations.** Approved usernames alone do not prove that a scanner owns the username. A malicious scanner who knows an allowed username can claim it first. For stronger identity, add login, verified OTP, or a player-specific code before launch.
 4. **Protect QR links.** Anyone who obtains a still-unused QR URL can attempt a reservation. Treat links/PNGs as bearer tickets. Do not send them to public channels before intended release.

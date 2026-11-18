@@ -28,8 +28,8 @@ test('CSV values are quoted and formula-like cells neutralized', () => {
 
 test('ZIP contains two correct stored entries and a central directory', () => {
   const bytes = zipFiles([
-    {name:'qr-pass-1.png',data:new Uint8Array([1,2,3])},
-    {name:'qr-pass-2.png',data:new Uint8Array([4,5,6,7])}
+    {name:'1scan-qr-pass-1.png',data:new Uint8Array([1,2,3])},
+    {name:'1scan-qr-pass-2.png',data:new Uint8Array([4,5,6,7])}
   ]);
   const view = new DataView(bytes.buffer);
   assert.equal(view.getUint32(0, true), 0x04034b50);

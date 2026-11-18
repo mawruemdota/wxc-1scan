@@ -1,4 +1,4 @@
--- First-to-Scan QR Pass: apply to a dedicated Supabase project.
+-- 1scan QR Pass: apply to a dedicated Supabase project.
 -- All privileged functions are callable ONLY by the service_role via Next.js.
 begin;
 create table public.allowed_players (

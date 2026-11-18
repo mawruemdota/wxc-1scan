@@ -162,7 +162,7 @@ export default function ClaimForm({ passKey }: { passKey: string }) {
 
   return <main className="mx-auto flex min-h-screen max-w-lg items-center px-4 py-10">
     <section className="panel w-full p-7 sm:p-9">
-      <div className="mb-6 flex items-center gap-3"><span className="rounded-xl bg-ink px-3 py-2 text-2xl text-white">▦</span><div><p className="text-xs font-bold uppercase tracking-[.2em] text-pine">Pass verification</p><h1 className="text-2xl font-extrabold">First to Scan</h1></div></div>
+      <div className="mb-6 flex items-center gap-3"><span className="rounded-xl bg-ink px-3 py-2 text-2xl text-white">▦</span><div><p className="text-xs font-bold uppercase tracking-[.2em] text-pine">Pass verification</p><h1 className="text-2xl font-extrabold">1scan</h1></div></div>
       {state === 'locking' && <div role="status" className="py-16 text-center"><div className="mx-auto mb-5 h-10 w-10 animate-spin rounded-full border-4 border-slate-200 border-t-pine"/><p className="font-semibold">Securing your pass…</p><p className="mt-2 text-sm text-slate-500">The first eligible browser request gets a five-minute reservation.</p></div>}
       {formVisible && <>
         <div className="mb-6 rounded-2xl bg-ink px-5 py-5 text-center text-white"><p className="text-xs font-semibold uppercase tracking-widest text-teal-200">Reservation expires in</p><div aria-live="off" className="mt-1 font-mono text-5xl font-bold tabular-nums">{timer}</div><p className="mt-2 text-xs text-teal-100">Refresh safely to resume in this browser.</p></div>

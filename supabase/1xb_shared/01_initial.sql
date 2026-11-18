@@ -1,5 +1,5 @@
 -- 1scan shared-1xb isolation. Keeps existing unprefixed tables/functions unchanged.
--- First-to-Scan QR Pass: apply to a dedicated Supabase project.
+-- 1scan QR Pass: isolated tables and functions for the shared 1xb Supabase project.
 -- All privileged functions are callable ONLY by the service_role via Next.js.
 create table public.one_scan_allowed_players (
   username text primary key,
