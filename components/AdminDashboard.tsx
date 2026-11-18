@@ -19,6 +19,7 @@ type Pass = {
   created_at: string;
 };
 type Stats = { total: number; unused: number; reserved: number; claimed: number };
+type CleanupPreview = { ok: boolean; total: number; claimed: number; activeReservations: number; receipts: number; maxId: number };
 type AdminData = { ok: boolean; passes: Pass[]; count: number; allowedPlayerCount: number; stats: Stats; serverNow: string };
 type IconName = 'qr' | 'grid' | 'users' | 'shield' | 'search' | 'download' | 'refresh' | 'logout' | 'plus' | 'check' | 'clock' | 'key' | 'copy' | 'upload' | 'file' | 'chevron-left' | 'chevron-right' | 'x' | 'alert' | 'filter' | 'menu';
 const PAGE_SIZE = 25;
@@ -93,7 +94,7 @@ function Metric({ label, value, icon, variant = 'default' }: { label: string; va
 export default function AdminDashboard({ initiallyAuthenticated }: { initiallyAuthenticated: boolean }) {
   const [authed, setAuthed] = useState(initiallyAuthenticated);
   const [password, setPassword] = useState('');
-  const [busy, setBusy] = useState<'login' | 'generate' | 'import' | 'export' | 'zip' | 'registration' | null>(null);
+  const [busy, setBusy] = useState<'login' | 'generate' | 'import' | 'export' | 'zip' | 'registration' | 'clear' | null>(null);
   const [notice, setNotice] = useState('');
   const [error, setError] = useState('');
   const [data, setData] = useState<AdminData | null>(null);
@@ -119,8 +120,15 @@ export default function AdminDashboard({ initiallyAuthenticated }: { initiallyAu
   const [registrationLoaded, setRegistrationLoaded] = useState(false);
   const [registrationLoading, setRegistrationLoading] = useState(false);
   const [mobileNav, setMobileNav] = useState(false);
+  const [cleanupOpen, setCleanupOpen] = useState(false);
+  const [cleanupLoading, setCleanupLoading] = useState(false);
+  const [cleanupSnapshot, setCleanupSnapshot] = useState<CleanupPreview | null>(null);
+  const [cleanupPhrase, setCleanupPhrase] = useState('');
+  const [cleanupAcknowledged, setCleanupAcknowledged] = useState(false);
+  const [cleanupError, setCleanupError] = useState('');
   const requestSerial = useRef(0);
   const genInput = useRef<HTMLInputElement | null>(null);
+  const cleanupInput = useRef<HTMLInputElement | null>(null);
   const previewRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
@@ -325,21 +333,113 @@ export default function AdminDashboard({ initiallyAuthenticated }: { initiallyAu
     } catch (e) { setError(e instanceof Error ? e.message : 'Unable to create QR ZIP'); }
     finally { setBusy(null); }
   }
-  async function exportClaims() {
+  async function exportPasses(exportStatus: PassStatus = status, exportSearch = search): Promise<boolean> {
     setBusy('export'); setError(''); setNotice('');
     try {
-      const query = new URLSearchParams({ search });
+      const query = new URLSearchParams({ status: exportStatus, search: exportSearch });
       const res = await fetch(`/api/admin/export?${query}`, { cache: 'no-store' });
       if (!res.ok) {
         const body = await res.json();
-        throw new Error(res.status === 413 ? 'Export exceeds the 10,000-row limit. Narrow the search.' : (body.reason || 'Could not export claims.'));
+        throw new Error(res.status === 413 ? 'Export exceeds the 10,000-row limit. Narrow the selection or search.' : (body.reason || 'Could not export QR results.'));
       }
-      const name = res.headers.get('Content-Disposition')?.match(/filename="([^"]+)"/)?.[1] || '1scan-claims.csv';
+      const name = res.headers.get('Content-Disposition')?.match(/filename="([^"]+)"/)?.[1] || '1scan-qr-' + exportStatus + '.csv';
       startDownload(await res.blob(), name);
-      setNotice('Claim log exported. Store the CSV securely because it includes personal information.');
-    } catch (e) { setError(e instanceof Error ? e.message : 'Could not export claims'); }
+      const selectionName = exportStatus === 'all' ? 'all QR results' :
+        exportStatus === 'unused' ? 'available QR results' : exportStatus + ' QR results';
+      setNotice('Exported ' + selectionName + '. Store the CSV securely: it contains QR pass keys and may include player information.');
+      return true;
+    } catch (e) { setError(e instanceof Error ? e.message : 'Could not export QR results'); return false; }
     finally { setBusy(null); }
   }
+
+  async function loadCleanupPreview() {
+    setCleanupLoading(true); setCleanupError('');
+    try {
+      const response = await fetch('/api/admin/cleanup', { cache: 'no-store' });
+      const preview = await response.json() as CleanupPreview;
+      if (!response.ok || !preview.ok) throw new Error('Unable to load the latest cleanup totals.');
+      setCleanupSnapshot(preview);
+    } catch (e) {
+      setCleanupSnapshot(null);
+      setCleanupError(e instanceof Error ? e.message : 'Unable to load cleanup totals.');
+    } finally { setCleanupLoading(false); }
+  }
+
+  function openCleanup() {
+    setCleanupOpen(true);
+    setCleanupSnapshot(null);
+    setCleanupPhrase('');
+    setCleanupAcknowledged(false);
+    setCleanupError('');
+    void loadCleanupPreview();
+  }
+
+  function closeCleanup() {
+    if (busy === 'clear') return;
+    setCleanupOpen(false);
+    setCleanupPhrase('');
+    setCleanupAcknowledged(false);
+    setCleanupError('');
+  }
+
+  async function clearAllResults(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const snapshot = cleanupSnapshot;
+    if (busy !== null || !snapshot || !snapshot.total || snapshot.activeReservations !== 0 ||
+        !cleanupAcknowledged || cleanupPhrase !== 'CLEAR ALL QR RESULTS') return;
+    setBusy('clear'); setCleanupError(''); setNotice(''); setError('');
+    try {
+      const response = await fetch('/api/admin/cleanup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          confirmation: cleanupPhrase,
+          acknowledged: cleanupAcknowledged,
+          expectedTotal: snapshot.total,
+          expectedClaimed: snapshot.claimed,
+          expectedMaxId: snapshot.maxId
+        })
+      });
+      const result = await response.json() as {
+        ok: boolean; reason?: string; deleted?: number; receiptsDeleted?: number;
+      };
+      if (!response.ok || !result.ok) {
+        if (result.reason === 'results_changed') throw new Error('QR results changed after you opened the dialog. Review the updated counts and confirm again.');
+        if (result.reason === 'active_reservations') throw new Error('Active QR reservations exist. Wait for the 60-second hold to expire before clearing.');
+        if (result.reason === 'nothing_to_clear') throw new Error('No QR results remain to clear.');
+        throw new Error('Unable to clear QR results. Nothing was deleted.');
+      }
+      setCleanupOpen(false);
+      setCleanupSnapshot(null);
+      setCleanupPhrase('');
+      setCleanupAcknowledged(false);
+      setSelectedId(null);
+      setPage(0);
+      setStatus('all');
+      setSearchInput('');
+      setSearch('');
+      setNotice('Deleted ' + (result.deleted || 0).toLocaleString() + ' QR passes and ' +
+        (result.receiptsDeleted || 0).toLocaleString() +
+        ' claim receipts. Registered players and registration settings are preserved.');
+      void refresh(true);
+    } catch (e) {
+      setCleanupError(e instanceof Error ? e.message : 'Unable to clear QR results.');
+      setCleanupPhrase('');
+      setCleanupAcknowledged(false);
+      void loadCleanupPreview();
+    } finally { setBusy(null); }
+  }
+
+  useEffect(() => {
+    if (!cleanupOpen) return;
+    cleanupInput.current?.focus();
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && busy !== 'clear') closeCleanup();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cleanupOpen, busy]);
 
   if (!authed) return <main className="flex min-h-screen items-center justify-center bg-[#F3F7F6] px-4 py-10">
     <form onSubmit={login} className="w-full max-w-md rounded-[26px] border border-[#E2EAE8] bg-white p-8 shadow-[0_20px_80px_rgba(10,44,47,0.07)] sm:p-10">
@@ -397,8 +497,16 @@ export default function AdminDashboard({ initiallyAuthenticated }: { initiallyAu
               <div className="flex flex-wrap items-start justify-between gap-4"><div><h2 className="text-lg font-bold tracking-tight">Passes & claim log</h2><p className="mt-1 text-xs text-[#7D8F93]">Select any pass to view its QR and claim details.</p></div><button type="button" disabled={busy !== null || !(data?.passes.some(pass => displayStatus(pass, serverClock) === 'unused'))} onClick={() => void bulkZip()} title="Downloads available passes on the current page only (up to 25 PNGs)" className="admin-quiet-button text-xs"><Icon name="download" /> {busy === 'zip' ? 'Preparing ZIP…' : 'Available QRs ZIP'}</button></div>
               <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <label className="flex w-full items-center gap-2 rounded-xl border border-[#DDE7E8] bg-[#FAFCFC] px-3.5 py-2.5 text-[#7B9093] focus-within:border-[#359784] focus-within:ring-2 focus-within:ring-emerald-100 sm:max-w-sm"><Icon name="search" className="h-[18px] w-[18px] flex-shrink-0" /><span className="sr-only">Search passes</span><input className="min-w-0 flex-1 bg-transparent text-sm text-[#173239] outline-none placeholder:text-[#9BAAAC]" type="search" placeholder="Search pass, name, username, email" value={searchInput} maxLength={80} onChange={e => setSearchInput(e.target.value)} /></label>
-                <button className="admin-quiet-button justify-center text-xs" disabled={busy !== null} type="button" onClick={() => void exportClaims()}><Icon name="file" />{busy === 'export' ? 'Exporting…' : 'Export claims CSV'}</button>
+                <div className="flex flex-wrap gap-2">
+                  <button className="admin-quiet-button justify-center text-xs" disabled={busy !== null || !data?.count} type="button" onClick={() => void exportPasses()} title="Exports the current status filter and search across all pages">
+                    <Icon name="file" />{busy === 'export' ? 'Exporting…' : status === 'all' ? 'Export all CSV' : status === 'unused' ? 'Export available CSV' : status === 'reserved' ? 'Export reserved CSV' : 'Export claimed CSV'}
+                  </button>
+                  <button type="button" disabled={busy !== null || !data?.stats.total} onClick={openCleanup} className="inline-flex items-center justify-center rounded-xl border border-red-200 bg-white px-3.5 py-2.5 text-xs font-bold text-red-700 transition hover:border-red-400 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-40">
+                    <Icon name="alert" /> Clear all QR results
+                  </button>
+                </div>
               </div>
+              <p className="mt-3 text-xs text-[#8A9C9E]">CSV export includes the selected status and search results across all pages (up to 10,000 entries). Clearing deletes all passes regardless of the selected filter.</p>
               <div role="group" aria-label="Filter passes by status" className="mt-4 flex max-w-full gap-1 overflow-x-auto rounded-xl bg-[#F3F7F7] p-1">
                 {(['all', 'unused', 'reserved', 'claimed'] as const).map(filter => {
                   const count = filter === 'all' ? stats.total : stats[filter];
@@ -464,6 +572,34 @@ export default function AdminDashboard({ initiallyAuthenticated }: { initiallyAu
       </div>
     </main>
 
+
+    {cleanupOpen && <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-[#0D292E]/70 p-4" onMouseDown={e => { if (e.target === e.currentTarget) closeCleanup(); }}>
+      <div role="dialog" aria-modal="true" aria-labelledby="clear-results-heading" aria-describedby="clear-results-description" className="my-auto w-full max-w-lg rounded-[24px] border border-red-200 bg-white p-6 shadow-2xl sm:p-8">
+        <div className="flex items-start justify-between gap-4">
+          <div className="flex items-center gap-3"><span className="flex h-11 w-11 items-center justify-center rounded-xl bg-red-100 text-red-700"><Icon name="alert" className="h-6 w-6" /></span><div><p className="text-[11px] font-bold uppercase tracking-wider text-red-700">Permanent cleanup</p><h2 id="clear-results-heading" className="text-xl font-extrabold text-[#18343A]">Clear all QR results</h2></div></div>
+          <button type="button" className="rounded-lg p-2 text-[#6A8185] hover:bg-slate-100" aria-label="Close cleanup dialog" onClick={closeCleanup} disabled={busy === 'clear'}><Icon name="x" /></button>
+        </div>
+        <p id="clear-results-description" className="mt-4 text-sm leading-6 text-[#60777C]">This removes every 1scan QR pass, including claimed and available entries, along with their associated claim receipts. <strong className="text-red-800">Existing QR links stop working, receipt recovery is lost, and the daily one-claim-per-username history is reset.</strong></p>
+        {cleanupLoading ? <p className="mt-4 text-sm text-[#597378]">Checking current database totals…</p> : cleanupSnapshot &&
+          <div className="mt-5 grid grid-cols-3 gap-2 rounded-xl border border-red-100 bg-red-50 p-4 text-center">
+            <div><p className="text-xl font-extrabold text-red-950">{cleanupSnapshot.total.toLocaleString()}</p><p className="text-xs text-red-800">QR passes</p></div>
+            <div><p className="text-xl font-extrabold text-red-950">{cleanupSnapshot.claimed.toLocaleString()}</p><p className="text-xs text-red-800">Claimed</p></div>
+            <div><p className="text-xl font-extrabold text-red-950">{cleanupSnapshot.receipts.toLocaleString()}</p><p className="text-xs text-red-800">Receipts</p></div>
+          </div>}
+        {cleanupSnapshot?.activeReservations ? <p role="alert" className="mt-4 rounded-xl border border-orange-200 bg-orange-50 p-3 text-sm text-orange-900">There are {cleanupSnapshot.activeReservations} active reservations. Wait for their 60-second window to expire before clearing.</p> : null}
+        <p className="mt-4 text-xs leading-5 text-[#647B7D]"><strong>Preserved:</strong> registered player usernames, registration page URL and admin account. The QR sequence is not reset, preventing reuse of old reference numbers.</p>
+        <div className="mt-5">
+          <button type="button" className="admin-quiet-button w-full justify-center" disabled={busy !== null || !cleanupSnapshot?.total} onClick={() => void exportPasses('all', '')}><Icon name="download" /> {busy === 'export' ? 'Exporting all records…' : 'Export all QR results (backup CSV)'}</button>
+          <p className="mt-2 text-xs text-[#839697]">Backup includes sensitive player details and QR pass keys. Store it securely. Exports are capped at 10,000 records.</p>
+        </div>
+        {cleanupError && <p role="alert" className="mt-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">{cleanupError}</p>}
+        <form onSubmit={clearAllResults} className="mt-5 space-y-4">
+          <label className="flex items-start gap-3 text-sm text-[#415F64]"><input type="checkbox" checked={cleanupAcknowledged} onChange={e => setCleanupAcknowledged(e.target.checked)} className="mt-1 h-4 w-4 accent-red-700" disabled={busy === 'clear'} /><span>I understand this is <strong>irreversible</strong>, will remove claim history and all existing QR links, and I have exported any records I need.</span></label>
+          <div><label htmlFor="confirm-clear-qr" className="block text-xs font-semibold text-[#38555A]">Type <strong className="font-black text-red-800">CLEAR ALL QR RESULTS</strong> to confirm</label><input ref={cleanupInput} id="confirm-clear-qr" className="input mt-2" autoComplete="off" spellCheck={false} value={cleanupPhrase} onChange={e => setCleanupPhrase(e.target.value)} placeholder="CLEAR ALL QR RESULTS" disabled={busy === 'clear'} /></div>
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end"><button type="button" className="admin-quiet-button justify-center" disabled={busy === 'clear'} onClick={closeCleanup}>Cancel</button><button type="submit" disabled={busy !== null || cleanupLoading || !cleanupSnapshot?.total || !!cleanupSnapshot?.activeReservations || !cleanupAcknowledged || cleanupPhrase !== 'CLEAR ALL QR RESULTS'} className="inline-flex items-center justify-center rounded-xl bg-red-700 px-5 py-3 text-sm font-bold text-white transition hover:bg-red-800 disabled:cursor-not-allowed disabled:opacity-40">{busy === 'clear' ? 'Deleting…' : 'Permanently delete all QR results'}</button></div>
+        </form>
+      </div>
+    </div>}
     {generationOpen && <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#0D292E]/60 p-4" onMouseDown={e => { if (e.target === e.currentTarget) setGenerationOpen(false); }}>
       <div role="dialog" aria-modal="true" aria-labelledby="generate-heading" className="w-full max-w-md rounded-[25px] bg-white p-7 shadow-2xl"><div className="flex items-start justify-between gap-3"><span className="flex h-11 w-11 items-center justify-center rounded-xl bg-[#E5F5EB] text-[#2A7D65]"><Icon name="qr" className="h-6 w-6" /></span><button type="button" aria-label="Close generate dialog" onClick={() => setGenerationOpen(false)} className="rounded-lg p-2 text-[#71878B] hover:bg-[#F1F5F5]"><Icon name="x" /></button></div><h2 id="generate-heading" className="mt-5 text-2xl font-bold tracking-tight">Generate QR passes</h2><p className="mt-2 text-sm leading-6 text-[#82969A]">Each pass receives an unguessable, single-use key. Download and distribute the images when you are ready.</p><form onSubmit={generate} className="mt-6"><label htmlFor="pass-quantity" className="text-sm font-semibold text-[#345158]">Number of passes</label><input ref={genInput} id="pass-quantity" className="input mt-2" type="number" min="1" max="100" required value={quantity} onChange={e => setQuantity(Number(e.target.value))}/><p className="mt-2 text-xs text-[#88999C]">1–100 passes per batch</p>{error && <p role="alert" className="mt-4 rounded-lg bg-red-50 p-3 text-xs text-red-700">{error}</p>}<div className="mt-7 flex justify-end gap-2"><button className="admin-quiet-button" type="button" onClick={() => setGenerationOpen(false)}>Cancel</button><button className="admin-primary-button" type="submit" disabled={busy !== null}><Icon name="plus" />{busy === 'generate' ? 'Generating…' : 'Generate passes'}</button></div></form></div>
     </div>}
