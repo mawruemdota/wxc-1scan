@@ -106,7 +106,6 @@ export default function AdminDashboard({ initiallyAuthenticated }: { initiallyAu
   const [activeArea, setActiveArea] = useState<'passes' | 'players'>('passes');
   const [now, setNow] = useState(Date.now());
   const [skew, setSkew] = useState(0);
-  const [lastRefresh, setLastRefresh] = useState<number | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [generationOpen, setGenerationOpen] = useState(false);
   const [quantity, setQuantity] = useState(10);
@@ -149,7 +148,6 @@ export default function AdminDashboard({ initiallyAuthenticated }: { initiallyAu
       if (page > 0 && page * PAGE_SIZE >= result.count) { setPage(Math.max(0, Math.ceil(result.count / PAGE_SIZE) - 1)); return; }
       setSkew(Date.parse(result.serverNow) - Date.now());
       setData(result);
-      setLastRefresh(Date.now());
       if (manual) setError('');
     } catch (e) {
       if (ticket === requestSerial.current) setError(e instanceof Error ? e.message : 'Unable to load dashboard');
@@ -446,14 +444,11 @@ export default function AdminDashboard({ initiallyAuthenticated }: { initiallyAu
   if (!authed) return <main className="flex min-h-screen items-center justify-center bg-[#F3F7F6] px-4 py-10">
     <form onSubmit={login} className="w-full max-w-md rounded-[26px] border border-[#E2EAE8] bg-white p-8 shadow-[0_20px_80px_rgba(10,44,47,0.07)] sm:p-10">
       <div className="mb-7 inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-[#0A3939] text-white"><Icon name="qr" className="h-7 w-7" /></div>
-      <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#0E8270]">1scan · Restricted control center</p>
-      <h1 className="mt-2 text-3xl font-bold tracking-tight text-[#143239]">Welcome back</h1>
-      <p className="mb-8 mt-2 text-sm text-[#76878C]">Sign in to manage QR passes and verified claims.</p>
+      <h1 className="mb-8 mt-2 text-3xl font-bold tracking-tight text-[#143239]">Welcome back</h1>
       <label htmlFor="admin-password" className="block text-sm font-semibold text-[#284249]">Admin password</label>
       <input id="admin-password" type="password" autoComplete="current-password" required className="input mt-2" value={password} onChange={e => setPassword(e.target.value)} />
       {error && <p role="alert" className="mt-4 rounded-xl bg-red-50 p-3 text-sm text-red-700">{error}</p>}
       <button className="btn mt-6 w-full" disabled={busy === 'login'}>{busy === 'login' ? 'Signing in…' : 'Sign in securely'}</button>
-      <p className="mt-6 flex items-center justify-center gap-2 text-xs text-[#87989C]"><Icon name="shield" /> Server-verified session</p>
     </form>
   </main>;
 
@@ -481,7 +476,7 @@ export default function AdminDashboard({ initiallyAuthenticated }: { initiallyAu
     <main className="min-w-0 flex-1 px-4 pb-14 pt-7 sm:px-7 lg:px-9 lg:pt-10 2xl:px-12">
       <div className="mx-auto max-w-[1440px]">
         <header className="mb-7 flex flex-wrap items-center justify-between gap-4">
-          <div><p className="text-[11px] font-bold uppercase tracking-[0.16em] text-[#64868B]">Admin / {activeArea === 'passes' ? 'Pass management' : 'Registered players'}</p><h1 className="mt-1 text-[27px] font-bold tracking-[-0.04em] text-[#16343B] sm:text-[33px]">{activeArea === 'passes' ? 'QR pass dashboard' : 'Registered players'}</h1><p className="mt-1 text-sm text-[#798B91]">{activeArea === 'passes' ? 'Manage passes, reservations and verified claims.' : 'Review and synchronize the list of eligible usernames.'}</p></div>
+          <div><p className="text-[11px] font-bold uppercase tracking-[0.16em] text-[#64868B]">Admin / {activeArea === 'passes' ? 'Pass management' : 'Registered players'}</p><h1 className="mt-1 text-[27px] font-bold tracking-[-0.04em] text-[#16343B] sm:text-[33px]">{activeArea === 'passes' ? 'QR pass dashboard' : 'Registered players'}</h1></div>
           <div className="flex flex-wrap items-center gap-2"><button type="button" onClick={() => void refresh(true)} disabled={refreshing} className="admin-quiet-button" title="Refresh the current filters and page"><Icon name="refresh" className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} /> <span className="hidden sm:inline">Refresh</span></button><button type="button" onClick={() => void logout()} className="admin-quiet-button lg:hidden"><Icon name="logout" /> Sign out</button><button onClick={() => setGenerationOpen(true)} className="admin-primary-button"><Icon name="plus" /> Generate passes</button></div>
         </header>
         {(error || notice) && <div aria-live="polite" className="mb-5 space-y-2">{error && <div role="alert" className="flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"><Icon name="alert" className="mt-0.5 h-4 w-4 flex-shrink-0" />{error}<button type="button" onClick={() => setError('')} className="ml-auto" aria-label="Dismiss error"><Icon name="x" /></button></div>}{notice && <div role="status" className="flex items-start gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800"><Icon name="check" className="mt-0.5 h-4 w-4 flex-shrink-0" />{notice}<button type="button" onClick={() => setNotice('')} className="ml-auto" aria-label="Dismiss message"><Icon name="x" /></button></div>}</div>}
@@ -540,7 +535,6 @@ export default function AdminDashboard({ initiallyAuthenticated }: { initiallyAu
                 {selected.status === 'claimed' && <div className="mt-5 border-t border-[#EBF0F0] pt-5"><p className="mb-3 text-[11px] font-semibold uppercase tracking-[.1em] text-[#9AABAC]">Verified claimant</p><dl className="space-y-3 text-xs">{([['Full name', selected.claimed_full_name], ['Username', selected.claimed_username], ['Email', selected.claimed_email], ['Claimed (Manila)', manilaDate(selected.claimed_at)]] as const).map(([label, value]) => <div key={label}><dt className="text-[#8C9E9F]">{label}</dt><dd className="mt-1 break-words font-semibold text-[#355057]">{value || '—'}</dd></div>)}</dl></div>}
               </> : <div className="py-14 text-center text-sm text-[#92A1A3]">Select a pass from the table to view its QR code.</div>}
             </section>
-            <section className="rounded-[20px] border border-[#E0EAE8] bg-[#ECF6F2] p-5"><div className="flex items-center gap-2 font-semibold text-[#235B50]"><Icon name="shield" /> Live security controls</div><p className="mt-2 text-xs leading-5 text-[#5F837A]">Atomic reservations, one-minute holds, and Manila-based daily claim limits remain enforced by the database.</p><p className="mt-3 flex items-center gap-2 text-[11px] text-[#708E86]"><span className="h-1.5 w-1.5 rounded-full bg-[#2B9C74]" />{lastRefresh ? `Last refreshed ${new Date(lastRefresh).toLocaleTimeString('en-PH', { hour12: false, timeZone: 'Asia/Manila' })}` : 'Connecting…'} · Auto-refresh every 10s</p></section>
           </div>
           {/* Off-screen PNG canvases: visible only to the browser's local bulk ZIP exporter. */}
           <div aria-hidden="true" className="pointer-events-none absolute -left-[100000px] top-0 h-0 w-0 overflow-hidden">{data?.passes.map(pass => <QRCodeCanvas key={pass.id} id={`qr-export-${pass.id}`} value={claimUrl(pass.pass_key)} size={512} level="M" marginSize={4} />)}</div>
@@ -570,7 +564,6 @@ export default function AdminDashboard({ initiallyAuthenticated }: { initiallyAu
               </div>
             </section>
         </div>}
-        <footer className="mt-8 flex flex-wrap items-center justify-between gap-2 border-t border-[#E2ECEB] pt-5 text-[11px] text-[#91A2A4]"><span>1scan · Administrative control center</span><span>Private player data · Asia/Manila timezone</span></footer>
       </div>
     </main>
 
