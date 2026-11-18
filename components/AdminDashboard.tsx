@@ -352,8 +352,9 @@ export default function AdminDashboard({ initiallyAuthenticated }: { initiallyAu
     finally { setBusy(null); }
   }
 
-  async function loadCleanupPreview() {
-    setCleanupLoading(true); setCleanupError('');
+  async function loadCleanupPreview(preserveError = false) {
+    setCleanupLoading(true);
+    if (!preserveError) setCleanupError('');
     try {
       const response = await fetch('/api/admin/cleanup', { cache: 'no-store' });
       const preview = await response.json() as CleanupPreview;
@@ -366,6 +367,7 @@ export default function AdminDashboard({ initiallyAuthenticated }: { initiallyAu
   }
 
   function openCleanup() {
+    if (busy !== null) return;
     setCleanupOpen(true);
     setCleanupSnapshot(null);
     setCleanupPhrase('');
@@ -426,7 +428,7 @@ export default function AdminDashboard({ initiallyAuthenticated }: { initiallyAu
       setCleanupError(e instanceof Error ? e.message : 'Unable to clear QR results.');
       setCleanupPhrase('');
       setCleanupAcknowledged(false);
-      void loadCleanupPreview();
+      void loadCleanupPreview(true);
     } finally { setBusy(null); }
   }
 

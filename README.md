@@ -5,7 +5,7 @@
 The Vercel app uses the existing **1xb** Supabase database (project ref `cedxzjijdboojwjvkxqv`), **not** a new Supabase project. To avoid altering the earlier 1xb QR application, 1scan's tables and SQL functions have a `one_scan_` prefix in the existing `public` schema.
 
 The applied SQL is saved in `supabase/1xb_shared/` in execution order:
-`01_initial.sql`, `02_critical_fixes.sql`, `03_admin_dashboard.sql`, `04_one_minute_reservation.sql`, `05_username_only_daily_claims.sql`, and `06_registration_link_setting.sql`.
+`01_initial.sql`, `02_critical_fixes.sql`, `03_admin_dashboard.sql`, `04_one_minute_reservation.sql`, `05_username_only_daily_claims.sql`, `06_registration_link_setting.sql`, and `07_admin_results_cleanup.sql`.
 Rollback-only test scripts are in `supabase/1xb_shared/tests/`.
 These migrations have already been applied to 1xb through Supabase; **do not rerun** them on 1xb.
 
@@ -116,8 +116,22 @@ To verify claims, log in, import a CSV with a `username` column, and generate a 
 | `/api/receipt?key=...` | GET | Read-only receipt recovery for the original claimant session |
 | `/api/registration` | GET | Public registration-button URL only |
 | `/api/registration` | POST | Authenticated admin-only registration URL update |
+| `/api/admin/export?status=claimed&search=` | GET | Export current status/search selection as a secure CSV (maximum 10,000 records) |
+| `/api/admin/cleanup` | GET | Admin-only cleanup preview and active-reservation check |
+| `/api/admin/cleanup` | POST | Confirmed admin-only atomic deletion of all QR passes and receipts |
 
 All mutating routes check same-origin `Origin`. Session tokens are random 256-bit cookie values; the raw token is never exposed to the browser JavaScript.
+
+
+## QR result exports and cleanup
+
+In the **Admin → Pass management** view, choose **All passes**, **Available**, **Reserved**, or **Claimed** and optionally enter a search term. Select the **Export … CSV** button. The export applies the current status/search across every page, not only the first 25 visible rows. The CSV contains pass identifiers, full QR keys, display status, applicable claim information and Manila timestamps. It never exports session tokens or IP addresses. Because keys for unused passes can be redeemed, treat these exports as confidential. Exports are capped at 10,000 matching entries (HTTP 413 above this limit); narrow the selection before retrying.
+
+The **Clear all QR results** action is **not scoped to the current filter**. It removes every 1scan pass, claimed or not, and all linked claim receipts. It preserves the registered player allow-list, registration page URL, admin access and unrelated 1xb database objects. It requires a signed-in administrator, same-origin POST, a fresh database snapshot, a checkbox acknowledging the consequences, and the exact phrase `CLEAR ALL QR RESULTS`. If a pass is actively reserved, or the counts differ from the preview because another user has changed results, deletion is refused. The option to export **all** records first appears in the confirmation dialog.
+
+**This is irreversible.** The old QR links cannot be used afterward; stored receipts disappear; daily username claim history resets, so those players can become eligible again that day with newly generated QR passes. Past claim reference numbers are not reused. The cleanup button creates no automatic backup and **does not run** when merely viewing the dashboard or deploying the code. Export any needed records before confirming.
+
+Database deletion recovers logical storage for PostgreSQL to reuse, but physical file size and billed storage may not fall immediately. PostgreSQL vacuum/autovacuum controls how dead tuples are reclaimed. The operation does not touch older unrelated 1xb data or automatically clean public request rate-limit logs.
 
 ## 6. Security and operational notes
 
