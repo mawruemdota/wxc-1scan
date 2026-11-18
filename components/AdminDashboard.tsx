@@ -151,7 +151,8 @@ export default function AdminDashboard({ initiallyAuthenticated }: { initiallyAu
     if (!authed) return;
     void refresh();
     const timer = window.setInterval(() => void refresh(), 10000);
-    return () => { window.clearInterval(timer); requestSerial.current++; };
+    const serialRef = requestSerial;
+    return () => { window.clearInterval(timer); serialRef.current++; };
   }, [authed, refresh]);
 
   useEffect(() => {
