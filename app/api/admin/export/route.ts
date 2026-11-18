@@ -18,14 +18,14 @@ export async function GET(req: NextRequest) {
     const search = normalizePassSearch(rawSearch);
     const supabase = db();
     const filter = passFilter('claimed', search, new Date().toISOString());
-    const check = supabase.from('passes').select('id', { count: 'exact', head: true }).or(filter!);
+    const check = supabase.from('one_scan_passes').select('id', { count: 'exact', head: true }).or(filter!);
     const count = await check;
     if (count.error) throw count.error;
     if ((count.count || 0) > LIMIT) return json({ ok: false, reason: 'export_limit_exceeded', limit: LIMIT }, 413);
 
     const rows: Record<string, unknown>[] = [];
     for (let offset = 0; offset < (count.count || 0); offset += 500) {
-      const query = supabase.from('passes').select(COLUMNS).or(filter!).order('id', { ascending: false }).range(offset, offset + 499);
+      const query = supabase.from('one_scan_passes').select(COLUMNS).or(filter!).order('id', { ascending: false }).range(offset, offset + 499);
       const result = await query;
       if (result.error) throw result.error;
       rows.push(...(result.data || []));

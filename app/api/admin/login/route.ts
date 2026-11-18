@@ -9,7 +9,7 @@ export async function POST(req:NextRequest) {
   try {
     const {password}=await req.json();
     if(typeof password!=='string'||password.length>500) return json({ok:false,reason:'invalid_credentials'},401);
-    const {data,error}=await db().rpc('admin_login_allow',{p_ip:clientIp(req)});
+    const {data,error}=await db().rpc('one_scan_admin_login_allow',{p_ip:clientIp(req)});
     if(error) throw error;
     if(!data) return json({ok:false,reason:'too_many_attempts'},429);
     if(!checkPassword(password)) return json({ok:false,reason:'invalid_credentials'},401);

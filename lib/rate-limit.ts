@@ -8,7 +8,7 @@ type RateResult = { ok: boolean; reason: string; retry_after?: number };
 
 /** Database-atomic, persistent per-IP quotas across all Vercel instances. */
 export async function enforcePublicRateLimit(endpoint: PublicEndpoint, ip: string): Promise<NextResponse | null> {
-  const { data, error } = await db().rpc('public_request_allow', {
+  const { data, error } = await db().rpc('one_scan_public_request_allow', {
     p_endpoint: endpoint,
     p_ip: ip
   });

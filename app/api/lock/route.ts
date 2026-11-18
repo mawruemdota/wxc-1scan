@@ -24,7 +24,7 @@ export async function POST(req: NextRequest) {
     const cookieValue = req.cookies.get(PLAYER_COOKIE)?.value;
     const validExistingCookie = typeof cookieValue === 'string' && /^[a-f0-9]{64}$/.test(cookieValue);
     const session = validExistingCookie ? cookieValue : randomBytes(32).toString('hex');
-    const { data, error } = await db().rpc('lock_pass', { p_key: key, p_session: session, p_ip: ip });
+    const { data, error } = await db().rpc('one_scan_lock_pass', { p_key: key, p_session: session, p_ip: ip });
     if (error) throw error;
     const result = data as { ok: boolean; reason: string; reserved_until?: string; server_now?: string; claimed_at?: string; claim_reference?: string };
     const response = json(result, result.ok ? 200 : 409);

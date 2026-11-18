@@ -25,17 +25,17 @@ export async function GET(req: NextRequest) {
     }
     const supabase = db();
     const serverNow = new Date().toISOString();
-    let listing = supabase.from('passes').select(PASS_COLUMNS, { count: 'exact' });
+    let listing = supabase.from('one_scan_passes').select(PASS_COLUMNS, { count: 'exact' });
     const filter = passFilter(status, normalizePassSearch(rawSearch), serverNow);
     if (filter) listing = listing.or(filter);
     const [passes, total, unused, reserved, claimed, expired, players] = await Promise.all([
       listing.order('id', { ascending: false }).range(offset, offset + limit - 1),
-      supabase.from('passes').select('id', { head: true, count: 'exact' }),
-      supabase.from('passes').select('id', { head: true, count: 'exact' }).eq('status', 'unused'),
-      supabase.from('passes').select('id', { head: true, count: 'exact' }).eq('status', 'reserved').gt('reserved_until', serverNow),
-      supabase.from('passes').select('id', { head: true, count: 'exact' }).eq('status', 'claimed'),
-      supabase.from('passes').select('id', { head: true, count: 'exact' }).eq('status', 'reserved').lte('reserved_until', serverNow),
-      supabase.from('allowed_players').select('username', { head: true, count: 'exact' })
+      supabase.from('one_scan_passes').select('id', { head: true, count: 'exact' }),
+      supabase.from('one_scan_passes').select('id', { head: true, count: 'exact' }).eq('status', 'unused'),
+      supabase.from('one_scan_passes').select('id', { head: true, count: 'exact' }).eq('status', 'reserved').gt('reserved_until', serverNow),
+      supabase.from('one_scan_passes').select('id', { head: true, count: 'exact' }).eq('status', 'claimed'),
+      supabase.from('one_scan_passes').select('id', { head: true, count: 'exact' }).eq('status', 'reserved').lte('reserved_until', serverNow),
+      supabase.from('one_scan_allowed_players').select('username', { head: true, count: 'exact' })
     ]);
     for (const result of [passes, total, unused, reserved, claimed, expired, players]) {
       if (result.error) throw result.error;
@@ -65,7 +65,7 @@ export async function POST(req: NextRequest) {
       const count = Number(payload.count);
       if (!Number.isInteger(count) || count < 1 || count > 100) return json({ ok: false, reason: 'count_must_be_1_to_100' }, 400);
       const keys = Array.from({ length: count }, () => ({ pass_key: randomBytes(12).toString('hex') }));
-      const { error } = await supabase.from('passes').insert(keys);
+      const { error } = await supabase.from('one_scan_passes').insert(keys);
       if (error) throw error;
       return json({ ok: true, generated: count });
     }
@@ -79,12 +79,12 @@ export async function POST(req: NextRequest) {
         if (payload.usernames.some((name: unknown) => typeof name !== 'string' || name.trim().length < 1 || name.trim().length > 64))
           return json({ ok: false, reason: 'invalid_username' }, 400);
         if (payload.confirm !== true) return json({ ok: false, reason: 'confirmation_required' }, 400);
-        const { data, error } = await supabase.rpc('replace_allowed_players', { p_usernames: normalized });
+        const { data, error } = await supabase.rpc('one_scan_replace_allowed_players', { p_usernames: normalized });
         if (error) throw error;
         return json(data as object, data?.ok ? 200 : 400);
       }
       for (let i = 0; i < normalized.length; i += 500) {
-        const { error } = await supabase.from('allowed_players').upsert(
+        const { error } = await supabase.from('one_scan_allowed_players').upsert(
           normalized.slice(i, i + 500).map(username => ({ username })), { onConflict: 'username', ignoreDuplicates: true }
         );
         if (error) throw error;

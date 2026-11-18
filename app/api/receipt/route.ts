@@ -18,7 +18,7 @@ export async function GET(req: NextRequest) {
     const session = req.cookies.get(PLAYER_COOKIE)?.value;
     if (!key || !/^[a-f0-9]{24}$/.test(key) || !session || !/^[a-f0-9]{64}$/.test(session))
       return json({ ok: false, reason: 'not_claimed' }, 404);
-    const { data, error } = await db().rpc('get_claim_receipt', { p_key: key, p_session: session });
+    const { data, error } = await db().rpc('one_scan_get_claim_receipt', { p_key: key, p_session: session });
     if (error) throw error;
     const result = data as { ok: boolean; reason: string; claimed_at?: string; claim_reference?: string };
     return json(result, result.ok ? 200 : 404);

@@ -1,5 +1,27 @@
 # First-to-Scan QR Pass & Verification
 
+## Current 1scan deployment — shared 1xb Supabase project
+
+The Vercel app uses the existing **1xb** Supabase database (project ref `cedxzjijdboojwjvkxqv`), **not** a new Supabase project. To avoid altering the earlier 1xb QR application, 1scan's tables and SQL functions have a `one_scan_` prefix in the existing `public` schema.
+
+The applied SQL is saved in `supabase/1xb_shared/` in execution order:
+`01_initial.sql`, `02_critical_fixes.sql`, and `03_admin_dashboard.sql`.
+The three rollback-only test scripts are in `supabase/1xb_shared/tests/`.
+These migrations have already been applied to 1xb through Supabase; **do not rerun** them on 1xb.
+
+Original `supabase/migrations/` files remain for a **new, dedicated** database and would conflict with the existing 1xb tables if applied to 1xb. Do not run the original unprefixed migrations on 1xb.
+
+Configure Vercel project `1scan` with:
+- `NEXT_PUBLIC_SUPABASE_URL=https://cedxzjijdboojwjvkxqv.supabase.co`
+- `SUPABASE_SERVICE_ROLE_KEY` (sensitive: obtain from 1xb Supabase Settings → API Keys; set directly in Vercel, never GitHub)
+- `ADMIN_PASSWORD` (sensitive: Vercel only)
+
+Set production, preview and development targets as appropriate. Trigger a new deployment after changing environment variables. The server key must never have a `NEXT_PUBLIC_` prefix.
+
+**Important:** Pre-existing 1xb `public.lock_pass` and `public.claim_pass` functions are separate from 1scan. Supabase security advisors reported those legacy functions are publicly executable; 1scan does not use them. Review their permissions separately before using the original 1xb app for sensitive operations.
+
+---
+
 A Next.js 15 App Router/TypeScript/Tailwind web app with **Supabase PostgreSQL** atomic pass reservation, single-use claims, username allow-list imports, recovery receipts, persistent public request throttling, and an administrator claim log. Target hosting: **Vercel**.
 
 ## Core behavior

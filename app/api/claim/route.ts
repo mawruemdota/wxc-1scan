@@ -28,7 +28,7 @@ export async function POST(req: NextRequest) {
 
     // claim_pass returns the original receipt for a repeated submission from
     // the same session, even after the first success cleared its reservation.
-    const { data, error } = await db().rpc('claim_pass', {
+    const { data, error } = await db().rpc('one_scan_claim_pass', {
       p_key: key, p_session: session, p_ip: ip,
       p_full_name: fullName, p_username: username, p_email: email
     });
