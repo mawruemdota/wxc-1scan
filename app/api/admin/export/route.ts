@@ -8,7 +8,7 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const LIMIT = 10000;
-const COLUMNS = 'id,pass_key,claimed_full_name,claimed_username,claimed_email,claimed_ip,claim_date,claimed_at,created_at';
+const COLUMNS = 'id,pass_key,claimed_full_name,claimed_username,claimed_email,claim_date,claimed_at,created_at';
 
 export async function GET(req: NextRequest) {
   if (!await isAdmin()) return forbidden();
@@ -34,10 +34,10 @@ export async function GET(req: NextRequest) {
     const part = (type: string) => dateParts.find(item => item.type === type)?.value || '00';
     const date = `${part('year')}-${part('month')}-${part('day')}`;
     const manilaTime = (input: unknown) => input ? new Date(String(input)).toLocaleString('en-PH', { timeZone: 'Asia/Manila', hour12: false }) : '';
-    const headers = ['Pass ID', 'Pass Key', 'Full Name', 'Username', 'Email', 'IP Address', 'Claim Date (Manila)', 'Claimed At (Manila)', 'Created At (Manila)'];
+    const headers = ['Pass ID', 'Pass Key', 'Full Name', 'Username', 'Email', 'Claim Date (Manila)', 'Claimed At (Manila)', 'Created At (Manila)'];
     const csv = '\uFEFF' + [csvRow(headers), ...rows.map(row => csvRow([
       row.id, row.pass_key, row.claimed_full_name, row.claimed_username,
-      row.claimed_email, row.claimed_ip, row.claim_date, manilaTime(row.claimed_at), manilaTime(row.created_at)
+      row.claimed_email, row.claim_date, manilaTime(row.claimed_at), manilaTime(row.created_at)
     ]))].join('\r\n') + '\r\n';
     return new NextResponse(csv, {
       status: 200,

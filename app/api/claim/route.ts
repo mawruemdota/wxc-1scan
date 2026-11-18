@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 import { db } from '@/lib/supabase';
 import { PLAYER_COOKIE } from '@/lib/auth';
-import { clientIp, exception, forbidden, json, validOrigin } from '@/lib/http';
+import { exception, forbidden, json, validOrigin } from '@/lib/http';
 import { enforcePublicRateLimit } from '@/lib/rate-limit';
 
 export const runtime = 'nodejs';
@@ -10,10 +10,6 @@ export const dynamic = 'force-dynamic';
 export async function POST(req: NextRequest) {
   if (!validOrigin(req)) return forbidden();
   try {
-    const ip = clientIp(req);
-    const rateLimited = await enforcePublicRateLimit('claim', ip);
-    if (rateLimited) return rateLimited;
-
     const session = req.cookies.get(PLAYER_COOKIE)?.value;
     if (!session || !/^[a-f0-9]{64}$/.test(session))
       return json({ ok: false, reason: 'missing_session' }, 403);
@@ -25,11 +21,13 @@ export async function POST(req: NextRequest) {
         typeof username !== 'string' || username.trim().length < 1 || username.trim().length > 64 ||
         typeof email !== 'string' || email.trim().length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()))
       return json({ ok: false, reason: 'invalid_request' }, 400);
+    const rateLimited = await enforcePublicRateLimit('claim', session);
+    if (rateLimited) return rateLimited;
 
     // claim_pass returns the original receipt for a repeated submission from
     // the same session, even after the first success cleared its reservation.
     const { data, error } = await db().rpc('one_scan_claim_pass', {
-      p_key: key, p_session: session, p_ip: ip,
+      p_key: key, p_session: session, p_ip: '',
       p_full_name: fullName, p_username: username, p_email: email
     });
     if (error) throw error;

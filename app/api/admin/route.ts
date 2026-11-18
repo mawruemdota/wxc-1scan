@@ -8,7 +8,7 @@ import { isPassStatus, normalizePassSearch, passFilter } from '@/lib/admin-query
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-const PASS_COLUMNS = 'id,pass_key,status,reserved_until,claimed_full_name,claimed_username,claimed_email,claimed_ip,claim_date,claimed_at,created_at';
+const PASS_COLUMNS = 'id,pass_key,status,reserved_until,claimed_full_name,claimed_username,claimed_email,claim_date,claimed_at,created_at';
 
 export async function GET(req: NextRequest) {
   if (!await isAdmin()) return forbidden();

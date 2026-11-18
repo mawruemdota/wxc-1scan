@@ -6,11 +6,11 @@ import { json } from '@/lib/http';
 type PublicEndpoint = 'lock' | 'claim' | 'receipt';
 type RateResult = { ok: boolean; reason: string; retry_after?: number };
 
-/** Database-atomic, persistent per-IP quotas across all Vercel instances. */
-export async function enforcePublicRateLimit(endpoint: PublicEndpoint, ip: string): Promise<NextResponse | null> {
-  const { data, error } = await db().rpc('one_scan_public_request_allow', {
+/** Database-atomic quotas by QR pass key or browser session; no shared-IP throttling. */
+export async function enforcePublicRateLimit(endpoint: PublicEndpoint, subject: string): Promise<NextResponse | null> {
+  const { data, error } = await db().rpc('one_scan_public_request_allow_token', {
     p_endpoint: endpoint,
-    p_ip: ip
+    p_subject: subject
   });
   if (error) throw error; // Fail closed if the migration was not applied or Supabase is unavailable.
   const result = data as RateResult | null;
