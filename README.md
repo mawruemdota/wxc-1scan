@@ -27,7 +27,7 @@ A Next.js 15 App Router/TypeScript/Tailwind web app with **Supabase PostgreSQL**
 ## Core behavior
 
 - An `/admin` password-protected dashboard imports usernames from `.csv`/`.txt`, generates 1–100 random 96-bit QR pass keys per batch, offers PNG QR downloads, and displays claim logs (name, username, email, IP, Manila timestamp).
-- `/claim?key=...` runs client-side JavaScript immediately on mount, calls `POST /api/lock`, and starts a five-minute exclusive reservation. Refreshing from the **same browser/cookie and IP** resumes instead of resetting the timer.
+- `/claim?key=...` runs client-side JavaScript immediately on mount, calls `POST /api/lock`, and starts a one-minute exclusive reservation. Refreshing from the **same browser/cookie and IP** resumes instead of resetting the timer.
 - `POST /api/claim` checks ownership/expiry against the PostgreSQL clock, canonical allow-listed username, and uniqueness for username/email/public IP on the **Asia/Manila date**.
 - Invalid approved-username lookup or duplicate daily claim **releases** the pass in the same database transaction. A successful claim is permanent.
 - There are **no public database policies**. Privileged RPC `EXECUTE` permissions are restricted to Supabase `service_role`. The server alone holds its key.
@@ -89,7 +89,7 @@ Admin dashboard: [1scan.vercel.app/admin](https://1scan.vercel.app/admin).
 
 Set the three environment variables listed above in the production environment. **Store API secrets only in Vercel**, never in GitHub. Redeploy after changing environment variables.
 
-To verify claims, log in, import a CSV with a `username` column, and generate a test QR pass. Its first eligible scan should acquire a five-minute lock; a second scanner should see a reservation error; a completed claim must remain permanent. Generate final QR links using the intended production domain.
+To verify claims, log in, import a CSV with a `username` column, and generate a test QR pass. Its first eligible scan should acquire a one-minute lock; a second scanner should see a reservation error; a completed claim must remain permanent. Generate final QR links using the intended production domain.
 
 ## 5. Routes & contracts
 
@@ -118,7 +118,7 @@ All mutating routes check same-origin `Origin`. Session tokens are random 256-bi
 7. **Rate-limit housekeeping:** the `public_api_rate_limits` table keeps a row per endpoint, IP, and window duration. For long-running production environments, periodically delete records older than two days (`delete from public.public_api_rate_limits where window_started < clock_timestamp() - interval '2 days';`) from trusted admin tooling. Never expose a public cleanup endpoint.
 8. **Recovery scope:** newly successful claims have receipt records bound to the original 256-bit HttpOnly session cookie. A different browser, expired/deleted cookie, or pre-upgrade claim cannot recover its receipt automatically. Retry the original submission safely if a response is lost; do not copy tokens to client JavaScript.
 9. **Capacity and concurrent traffic:** run a realistic load test with multiple distinct devices/IPs, verify database function grants and edge/CDN behaviors, and rehearse simultaneous claims before using the app for prizes or paid admissions.
-10. **Browser sessions:** clearing cookies or switching browsers changes the reservation token. Switching networks during the five minutes is blocked by IP ownership; it does not release the lock until it expires.
+10. **Browser sessions:** clearing cookies or switching browsers changes the reservation token. Switching networks during the one-minute window is blocked by IP ownership; it does not release the lock until it expires.
 11. **Backups and recovery:** decide who can access Supabase backups and GitHub, and test rollback/recovery before an event. Use a dedicated production project.
 
 ## 7. Suggested verification checklist
@@ -132,7 +132,7 @@ All mutating routes check same-origin `Origin`. Session tokens are random 256-bi
 - [ ] Public per-IP quotas produce HTTP 429 with a `Retry-After` header, independent per route
 - [ ] Supabase `anon` and `authenticated` roles cannot select private tables or execute any privileged RPCs
 - [ ] Simultaneous scan from two phones: exactly one reservation
-- [ ] Same browser refresh preserves the original 5-minute deadline
+- [ ] Same browser refresh preserves the original 1-minute deadline
 - [ ] Another pass from the same IP rejected while reservation is active
 - [ ] Invalid username releases the pass immediately
 - [ ] Duplicate claimed username, email, or IP (Manila calendar day) rejected
