@@ -5,8 +5,8 @@
 The Vercel app uses the existing **1xb** Supabase database (project ref `cedxzjijdboojwjvkxqv`), **not** a new Supabase project. To avoid altering the earlier 1xb QR application, 1scan's tables and SQL functions have a `one_scan_` prefix in the existing `public` schema.
 
 The applied SQL is saved in `supabase/1xb_shared/` in execution order:
-`01_initial.sql`, `02_critical_fixes.sql`, and `03_admin_dashboard.sql`.
-The three rollback-only test scripts are in `supabase/1xb_shared/tests/`.
+`01_initial.sql`, `02_critical_fixes.sql`, `03_admin_dashboard.sql`, `04_one_minute_reservation.sql`, and `05_username_only_daily_claims.sql`.
+Rollback-only test scripts are in `supabase/1xb_shared/tests/`.
 These migrations have already been applied to 1xb through Supabase; **do not rerun** them on 1xb.
 
 Original `supabase/migrations/` files remain for a **new, dedicated** database and would conflict with the existing 1xb tables if applied to 1xb. Do not run the original unprefixed migrations on 1xb.
@@ -26,15 +26,15 @@ A Next.js 15 App Router/TypeScript/Tailwind web app with **Supabase PostgreSQL**
 
 ## Core behavior
 
-- An `/admin` password-protected dashboard imports usernames from `.csv`/`.txt`, generates 1–100 random 96-bit QR pass keys per batch, offers PNG QR downloads, and displays claim logs (name, username, email, IP, Manila timestamp).
-- `/claim?key=...` runs client-side JavaScript immediately on mount, calls `POST /api/lock`, and starts a one-minute exclusive reservation. Refreshing from the **same browser/cookie and IP** resumes instead of resetting the timer.
-- `POST /api/claim` checks ownership/expiry against the PostgreSQL clock, canonical allow-listed username, and uniqueness for username/email/public IP on the **Asia/Manila date**.
+- An `/admin` password-protected dashboard imports usernames from `.csv`/`.txt`, generates 1–100 random 96-bit QR pass keys per batch, offers PNG QR downloads, and displays claim logs (name, username, email, Manila timestamp).
+- `/claim?key=...` runs client-side JavaScript immediately on mount, calls `POST /api/lock`, and starts a one-minute exclusive reservation. Refreshing from the **same browser/cookie** resumes instead of resetting the timer.
+- `POST /api/claim` checks ownership/expiry against the PostgreSQL clock, canonical allow-listed username, and uniqueness for registered player username on the **Asia/Manila date**; emails and public IPs do not restrict claims.
 - Invalid approved-username lookup or duplicate daily claim **releases** the pass in the same database transaction. A successful claim is permanent.
 - There are **no public database policies**. Privileged RPC `EXECUTE` permissions are restricted to Supabase `service_role`. The server alone holds its key.
 - Admin sessions are signed HttpOnly cookies (12-hour expiry). Admin login attempts are limited per public IP to eight per 15-minute bucket.
 - Concurrent first-load requests from separate tabs cannot overwrite a successful reservation cookie: only a successful lock/resume writes `qr_session`.
 - Lost claim responses can be recovered: `claim_pass` is idempotent for its original session, `/api/receipt` checks recorded claims without changing them, and reopening a claimed QR from its original session displays the receipt.
-- Public `/api/lock`, `/api/claim`, and `/api/receipt` are database-rate-limited per trusted public IP across all Vercel instances. Limits are **15/min + 100/hour for locks, 8/min + 40/hour for claims, and 30/min + 200/hour for receipt checks**.
+- Public `/api/lock`, `/api/claim`, and `/api/receipt` are database-rate-limited by QR pass key or browser session (hashed before storage), not public IP. Limits are **15/min + 100/hour for locks, 8/min + 40/hour for claims, and 30/min + 200/hour for receipt checks**.
 
 ## 1. Install locally
 
@@ -75,7 +75,7 @@ npm run dev
 # browse http://localhost:3000/admin
 ```
 
-**Local IP behavior:** all requests in development are identified as `127.0.0.1` unless run on Vercel. This prevents meaningful multi-IP local testing; use a Vercel preview deployment or a controlled test harness to verify distinct IPs. Production refuses to read untrusted forwarding headers outside Vercel.
+**Network policy:** shared Wi-Fi is permitted. Public QR routes never require, compare, or record the visitor IP. Admin login retains its separate IP-based protection against password guessing.
 
 ## 3. GitHub repository
 
@@ -107,40 +107,30 @@ To verify claims, log in, import a CSV with a `username` column, and generate a 
 
 All mutating routes check same-origin `Origin`. Session tokens are random 256-bit cookie values; the raw token is never exposed to the browser JavaScript.
 
-## 6. Security/operational limitations to understand before production
+## 6. Security and operational notes
 
-1. **The first scan is the first eligible browser request to successfully reach `POST /api/lock`.** Initial HTML fetch, QR camera preview, and link-preview fetches alone don't reserve. JS-capable automated browsers **can** reserve passes; no JavaScript detection is a guaranteed anti-bot mechanism.
-2. **Public IP limits are shared.** Anyone on the same venue Wi-Fi, corporate NAT, or carrier-grade NAT may share one public IP, so the requested once-per-day IP restriction will block additional legitimate participants. Consider making IP a secondary abuse signal instead of a hard daily uniqueness rule if this is a public event. VPN/mobile-network changes can also alter results.
-3. **Pseudonymous registrations.** Approved usernames alone do not prove that a scanner owns the username. A malicious scanner who knows an allowed username can claim it first. For stronger identity, add login, verified OTP, or a player-specific code before launch.
-4. **Protect QR links.** Anyone who obtains a still-unused QR URL can attempt a reservation. Treat links/PNGs as bearer tickets. Do not send them to public channels before intended release.
-5. **Privacy and retention.** Full names, emails, and public IPs are stored in Supabase and shown in the admin log. Publish an appropriate privacy notice and implement a retention/deletion policy consistent with applicable privacy requirements. This code intentionally does not automatically delete claims, to preserve auditability.
-6. **Rate limits:** public lock/claim/receipt endpoints now have persistent database-backed per-IP quotas, enforce `429 Too Many Requests`, and send `Retry-After`. They are not CAPTCHA or bot-detection systems; sophisticated attackers with distributed IPs may still contend for passes. For high-value events add WAF/bot rules, monitoring, and a live incident plan. An unusually busy shared network might hit the same per-IP quota.
-7. **Rate-limit housekeeping:** the `public_api_rate_limits` table keeps a row per endpoint, IP, and window duration. For long-running production environments, periodically delete records older than two days (`delete from public.public_api_rate_limits where window_started < clock_timestamp() - interval '2 days';`) from trusted admin tooling. Never expose a public cleanup endpoint.
-8. **Recovery scope:** newly successful claims have receipt records bound to the original 256-bit HttpOnly session cookie. A different browser, expired/deleted cookie, or pre-upgrade claim cannot recover its receipt automatically. Retry the original submission safely if a response is lost; do not copy tokens to client JavaScript.
-9. **Capacity and concurrent traffic:** run a realistic load test with multiple distinct devices/IPs, verify database function grants and edge/CDN behaviors, and rehearse simultaneous claims before using the app for prizes or paid admissions.
-10. **Browser sessions:** clearing cookies or switching browsers changes the reservation token. Switching networks during the one-minute window is blocked by IP ownership; it does not release the lock until it expires.
-11. **Backups and recovery:** decide who can access Supabase backups and GitHub, and test rollback/recovery before an event. Use a dedicated production project.
+1. **Daily limit:** one successful claim per registered player username per Asia/Manila calendar day; usernames are canonicalized to lowercase. An email and network may be shared by multiple players.
+2. **QR security:** a successful claim permanently consumes the QR. A one-minute reservation belongs to a browser session, not an IP.
+3. **Identity:** an approved username alone does not prove account ownership. For prizes or sensitive events, require a verified account or player-specific code.
+4. **Public rate limits:** lock requests are limited per QR pass key; claim/receipt requests per browser session token. Only hashed subjects are stored. Each endpoint has a 60-second and one-hour quota and returns HTTP 429 with `Retry-After` when exceeded. Token-limit rows should periodically be purged when more than two days old.
+5. **Privacy:** new claims do not record public IP addresses. Historical IP values remain in the database but are no longer shown or exported by the admin dashboard. Names and email addresses still require appropriate privacy and retention controls.
+6. **Admin security:** admin login remains separately IP-throttled to protect passwords.
+7. **Recovery:** original browser sessions can resume after changing networks or recover confirmed receipts after a lost response.
+8. **Database isolation:** existing 1xb tables and functions unrelated to 1scan are left unchanged.
 
-## 7. Suggested verification checklist
+## 7. Verification checklist
 
-- [x] `npm run test:unit` passes (two initial session race-safety unit tests)
-- [ ] `npm install`, `npm run typecheck`, `npm run lint`, `npm run build` succeed
-- [ ] `npm audit` reviewed; pinned dependencies current for security releases
-- [ ] Both migrations and both transactional SQL smoke tests pass on a dedicated test project
-- [ ] Read-only receipt available after claim response drop and repeat POST has the same timestamp/reference
-- [ ] Rejected concurrent first-load lock does not set or replace the winning session cookie
-- [ ] Public per-IP quotas produce HTTP 429 with a `Retry-After` header, independent per route
-- [ ] Supabase `anon` and `authenticated` roles cannot select private tables or execute any privileged RPCs
-- [ ] Simultaneous scan from two phones: exactly one reservation
-- [ ] Same browser refresh preserves the original 1-minute deadline
-- [ ] Another pass from the same IP rejected while reservation is active
-- [ ] Invalid username releases the pass immediately
-- [ ] Duplicate claimed username, email, or IP (Manila calendar day) rejected
-- [ ] Midnight Asia/Manila boundary tested
-- [ ] Vercel production environment variables configured and no secrets committed
-- [ ] Final domain scanned and downloaded QR codes tested before public use
+- [x] One-minute database reservation duration
+- [x] Two participants behind the same public IP can reserve and claim separate QR passes
+- [x] Different usernames can share an email without blocking
+- [x] Same username cannot claim twice on the same Manila day
+- [x] Claimed QR codes are permanently single-use
+- [x] Browser sessions can resume after a network change
+- [x] Token-based rate limits work independently by pass key and session
+- [x] Supabase rollback-only tests verified with no lasting test rows
+- [ ] Perform event-scale end-to-end testing with real devices
 
-## 8. Changes in Critical Fixes Sprint (2026-11-18)
+## 8. Historical critical fixes (some behaviors superseded by username-only policy)
 
 | Concern | Behavior |
 | --- | --- |
