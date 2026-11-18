@@ -30,6 +30,97 @@ const messages: Record<string, string> = {
   not_claimed_yet: 'No confirmed claim was found for this browser yet. You can safely check again or retry your submission.'
 };
 
+type NoticeTone = 'connection' | 'reserved' | 'claimed' | 'error';
+
+function noticeTone(reason: string): NoticeTone {
+  if (['ip_claimed_today', 'ip_already_reserved', 'ip_changed', 'too_many_requests'].includes(reason)) return 'connection';
+  if (reason === 'reserved' || reason === 'not_session_owner') return 'reserved';
+  if (reason === 'claimed') return 'claimed';
+  return 'error';
+}
+
+const noticeStyles: Record<NoticeTone, { container: string; icon: string; heading: string; body: string }> = {
+  connection: {
+    container: 'border-red-300 bg-red-50',
+    icon: 'bg-red-100 text-red-700 ring-red-200',
+    heading: 'text-red-950',
+    body: 'text-red-900'
+  },
+  reserved: {
+    container: 'border-orange-300 bg-orange-50',
+    icon: 'bg-orange-100 text-orange-700 ring-orange-200',
+    heading: 'text-orange-950',
+    body: 'text-orange-900'
+  },
+  claimed: {
+    container: 'border-emerald-300 bg-emerald-50',
+    icon: 'bg-emerald-100 text-emerald-700 ring-emerald-200',
+    heading: 'text-emerald-950',
+    body: 'text-emerald-900'
+  },
+  error: {
+    container: 'border-red-300 bg-red-50',
+    icon: 'bg-red-100 text-red-700 ring-red-200',
+    heading: 'text-red-950',
+    body: 'text-red-900'
+  }
+};
+
+function noticeHeading(reason: string, tone: NoticeTone) {
+  if (tone === 'connection') return <><strong className="font-black">Internet connection</strong> issue</>;
+  if (tone === 'reserved') return <><strong className="font-black">Reserved</strong> — pass unavailable</>;
+  if (tone === 'claimed') return <>Already <strong className="font-black">claimed</strong></>;
+  if (reason === 'expired') return 'Reservation expired';
+  if (reason === 'invalid_key') return 'Invalid QR code';
+  if (reason === 'too_many_requests') return 'Request limit reached';
+  return 'Unable to verify pass';
+}
+
+function noticeDetails(reason: string) {
+  switch (reason) {
+    case 'ip_claimed_today':
+      return <>This <strong className="font-extrabold">internet connection</strong> has already claimed a pass today. Only one claim per public IP address is allowed each Manila calendar day.</>;
+    case 'ip_already_reserved':
+      return <>This <strong className="font-extrabold">internet connection</strong> already has another active reservation. Wait for it to expire before scanning a different pass.</>;
+    case 'ip_changed':
+      return <>Your <strong className="font-extrabold">internet connection</strong> changed. Reconnect to your original network and try again before the timer expires.</>;
+    case 'too_many_requests':
+      return <>Too many requests from this <strong className="font-extrabold">internet connection</strong>. Wait before trying again.</>;
+    case 'reserved':
+      return <>Another visitor has <strong className="font-extrabold">reserved</strong> this QR pass. You can try again after their reservation expires.</>;
+    case 'not_session_owner':
+      return <>This pass is <strong className="font-extrabold">reserved</strong> by another browser session. Open it from the original browser or wait for the reservation to expire.</>;
+    case 'claimed':
+      return <>This QR pass has already been <strong className="font-extrabold">claimed</strong> and cannot be used again.</>;
+    case 'already_claimed_today':
+      return <>This username, email address, or <strong className="font-extrabold">internet connection</strong> has already claimed a pass today. This QR pass has been released.</>;
+    default:
+      return messages[reason] || 'This pass is not available.';
+  }
+}
+
+function ScanNotice({ reason, retryAfter = 0, compact = false }: { reason: string; retryAfter?: number; compact?: boolean }) {
+  const tone = noticeTone(reason);
+  const style = noticeStyles[tone];
+  return <div role="alert" className={'rounded-2xl border-2 text-left shadow-sm ' + (compact ? 'p-4 ' : 'p-5 sm:p-6 ') + style.container}>
+    <div className="flex items-start gap-3">
+      <span aria-hidden="true" className={'flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ring-1 ' + style.icon}>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round" className="h-6 w-6">
+          {tone === 'claimed' ? <path d="M5 12.5 10 17l9-10" /> :
+            tone === 'reserved' ? <><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></> :
+            <><path d="M12 3 2.5 20h19L12 3Z" /><path d="M12 9v4m0 3h.01" /></>}
+        </svg>
+      </span>
+      <div className="min-w-0 flex-1">
+        <h2 className={'text-lg font-extrabold leading-snug ' + style.heading}>{noticeHeading(reason, tone)}</h2>
+        <p className={'mt-1.5 text-sm leading-6 ' + style.body}>{noticeDetails(reason)}</p>
+        {reason === 'too_many_requests' && retryAfter > 0 &&
+          <p className={'mt-2 text-sm font-semibold ' + style.body}>Try again in about {retryAfter} seconds.</p>}
+      </div>
+    </div>
+  </div>;
+}
+
 export default function ClaimForm({ passKey }: { passKey: string }) {
   const lastKey = useRef<string | null>(null);
   const [state, setState] = useState<State>('locking');
@@ -158,7 +249,6 @@ export default function ClaimForm({ passKey }: { passKey: string }) {
 
   const timer = `${String(Math.floor(remaining / 60)).padStart(2, '0')}:${String(remaining % 60).padStart(2, '0')}`;
   const formVisible = ['ready', 'submitting', 'checking', 'uncertain'].includes(state);
-  const errorText = messages[reason] || 'This pass is not available.';
 
   return <main className="mx-auto flex min-h-screen max-w-lg items-center px-4 py-10">
     <section className="panel w-full p-7 sm:p-9">
@@ -166,7 +256,7 @@ export default function ClaimForm({ passKey }: { passKey: string }) {
       {state === 'locking' && <div role="status" className="py-16 text-center"><div className="mx-auto mb-5 h-10 w-10 animate-spin rounded-full border-4 border-slate-200 border-t-pine"/><p className="font-semibold">Securing your pass…</p><p className="mt-2 text-sm text-slate-500">The first eligible browser request gets a one-minute reservation.</p></div>}
       {formVisible && <>
         <div className="mb-6 rounded-2xl bg-ink px-5 py-5 text-center text-white"><p className="text-xs font-semibold uppercase tracking-widest text-teal-200">Reservation expires in</p><div aria-live="off" className="mt-1 font-mono text-5xl font-bold tabular-nums">{timer}</div><p className="mt-2 text-xs text-teal-100">Refresh safely to resume in this browser.</p></div>
-        {reason && <p role="alert" className="mb-4 rounded-xl bg-amber-50 p-3 text-sm text-amber-900">{errorText}{reason === 'too_many_requests' && retryAfter > 0 ? ` Try again in about ${retryAfter} seconds.` : ''}</p>}
+        {reason && <div className="mb-4"><ScanNotice reason={reason} retryAfter={retryAfter} compact /></div>}
         {['uncertain', 'checking'].includes(state) && <div className="mb-5 rounded-xl border border-amber-200 bg-amber-50 p-4"><p className="font-semibold text-amber-950">Claim confirmation pending</p><p className="mt-1 text-sm text-amber-900">Your submission might already have succeeded. Checking the status will not create another claim.</p><button type="button" className="btn mt-3 w-full" onClick={() => void checkReceipt()} disabled={state === 'checking'}>{state === 'checking' ? 'Checking…' : 'Check claim status'}</button></div>}
         <form onSubmit={onSubmit} className="space-y-4">
           <label className="block"><span className="mb-1.5 block text-sm font-semibold">Full name</span><input className="input" maxLength={120} autoComplete="name" required value={form.fullName} onChange={e => setForm({ ...form, fullName: e.target.value })} placeholder="Your full name"/></label>
@@ -176,8 +266,19 @@ export default function ClaimForm({ passKey }: { passKey: string }) {
         </form>
         <p className="mt-5 text-xs leading-5 text-slate-500">One claim per username, email address, and public IP per Manila calendar day. Shared Wi-Fi may prevent multiple claims.</p>
       </>}
-      {state === 'success' && <div role="status" className="py-12 text-center"><div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-emerald-100 text-3xl text-emerald-800">✓</div><h2 className="mt-5 text-2xl font-extrabold">Pass claimed</h2><p className="mt-2 text-slate-600">Your registration was verified and this QR code is now permanently used.</p>{claimReference && <p className="mt-4 font-mono text-lg font-bold text-ink">{claimReference}</p>}{claimedAt && <p className="mt-3 text-sm text-slate-500">Recorded: {new Date(claimedAt).toLocaleString('en-PH', { timeZone: 'Asia/Manila' })} (Manila)</p>}<p className="mt-5 text-xs text-slate-500">Keep this browser session to view your receipt again for the next 24 hours.</p></div>}
-      {state === 'rejected' && <div role="alert" className="py-12 text-center"><div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-amber-100 text-3xl font-bold text-amber-800">!</div><h2 className="mt-5 text-2xl font-extrabold">Cannot claim this pass</h2><p className="mt-3 text-slate-600">{errorText}{reason === 'too_many_requests' && retryAfter > 0 ? ` Try again in about ${retryAfter} seconds.` : ''}</p>{reason === 'too_many_requests' ? <button type="button" className="btn mt-6 w-full" onClick={() => void attemptLock()}>Try again</button> : <p className="mt-5 text-xs text-slate-500">If this pass was released, open the QR link again to retry.</p>}</div>}
+      {state === 'success' && <div role="status" className="rounded-2xl border-2 border-emerald-300 bg-emerald-50 px-5 py-9 text-center sm:px-7">
+        <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-emerald-100 text-emerald-700 ring-2 ring-emerald-200"><svg className="h-9 w-9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12.5 10 17l9-10"/></svg></div>
+        <h2 className="mt-5 text-2xl font-extrabold text-emerald-950">Pass <strong className="font-black">claimed</strong></h2>
+        <p className="mt-2 text-sm leading-6 text-emerald-900">Your registration was verified and this QR code is now permanently used.</p>
+        {claimReference && <p className="mt-4 font-mono text-lg font-bold text-emerald-950">{claimReference}</p>}
+        {claimedAt && <p className="mt-3 text-sm text-emerald-800">Recorded: {new Date(claimedAt).toLocaleString('en-PH', { timeZone: 'Asia/Manila' })} (Manila)</p>}
+        <p className="mt-5 text-xs text-emerald-800">Keep this browser session to view your receipt again for the next 24 hours.</p>
+      </div>}
+      {state === 'rejected' && <div className="py-4">
+        <ScanNotice reason={reason} retryAfter={retryAfter} />
+        {reason === 'too_many_requests' ? <button type="button" className="btn mt-5 w-full" onClick={() => void attemptLock()}>Try again</button> :
+          <p className="mt-4 text-center text-xs leading-5 text-slate-500">If this pass was released, open the QR link again to retry.</p>}
+      </div>}
     </section>
   </main>;
 }
