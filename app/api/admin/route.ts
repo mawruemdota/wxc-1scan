@@ -72,7 +72,7 @@ export async function POST(req: NextRequest) {
     if (payload.action === 'upsert_players' || payload.action === 'replace_players') {
       if (!Array.isArray(payload.usernames) || payload.usernames.length < 1 || payload.usernames.length > 10000)
         return json({ ok: false, reason: 'invalid_player_list' }, 400);
-      const normalized: string[] = [...new Set(payload.usernames.map((name: unknown) =>
+      const normalized: string[] = [...new Set<string>((payload.usernames as unknown[]).map((name: unknown): string =>
         typeof name === 'string' ? name.trim().toLowerCase() : ''))].filter(x => x.length >= 1 && x.length <= 64);
       if (!normalized.length) return json({ ok: false, reason: 'no_valid_usernames' }, 400);
       if (payload.action === 'replace_players') {
