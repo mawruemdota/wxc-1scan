@@ -14,7 +14,6 @@ type Pass = {
   claimed_full_name: string | null;
   claimed_username: string | null;
   claimed_email: string | null;
-  claimed_ip: string | null;
   claim_date: string | null;
   claimed_at: string | null;
   created_at: string;
@@ -281,7 +280,7 @@ export default function AdminDashboard({ initiallyAuthenticated }: { initiallyAu
       }
       const name = res.headers.get('Content-Disposition')?.match(/filename="([^"]+)"/)?.[1] || '1scan-claims.csv';
       startDownload(await res.blob(), name);
-      setNotice('Claim log exported. Store the CSV securely because it includes personal information and IP addresses.');
+      setNotice('Claim log exported. Store the CSV securely because it includes personal information.');
     } catch (e) { setError(e instanceof Error ? e.message : 'Could not export claims'); }
     finally { setBusy(null); }
   }
@@ -372,7 +371,7 @@ export default function AdminDashboard({ initiallyAuthenticated }: { initiallyAu
               {selected ? <><p className="mt-1 text-xs text-[#8A9B9D]">QR-{String(selected.id).padStart(4, '0')}</p><div className="mx-auto mt-5 w-fit rounded-[20px] border border-[#E5ECEA] bg-white p-4 shadow-sm"><QRCodeCanvas id="qr-current" value={claimUrl(selected.pass_key)} size={512} level="M" marginSize={4} style={{ width: 212, height: 212, maxWidth: '100%' }} /></div><p className="mt-4 text-center text-xs text-[#7F9295]">Unique pass • first valid scan reserves</p>
                 <div className="mt-5 grid grid-cols-2 gap-2"><button type="button" onClick={() => downloadSelected(selected)} className="admin-primary-button justify-center text-xs"><Icon name="download" /> Download PNG</button><button type="button" onClick={() => void copy(selected.pass_key)} className="admin-quiet-button justify-center text-xs"><Icon name="copy" /> Copy link</button></div>
                 <div className="mt-5 border-t border-[#EBF0F0] pt-5"><p className="text-[11px] font-semibold uppercase tracking-[.1em] text-[#9AABAC]">Pass details</p><div className="mt-3 space-y-3 text-xs"><div className="flex items-start justify-between gap-3"><span className="text-[#819497]">Key</span><code className="max-w-[190px] break-all text-right font-mono text-[#355157]">{selected.pass_key}</code></div><div className="flex items-start justify-between gap-3"><span className="text-[#819497]">Created</span><span className="text-right font-medium text-[#335058]">{manilaDate(selected.created_at)}</span></div>{selectedStatus === 'reserved' && selected.reserved_until && <div className="flex items-center justify-between gap-3 rounded-lg bg-amber-50 p-3 font-semibold text-amber-800"><span>Reservation ends in</span><span className="font-mono">{countdown(selected.reserved_until, serverClock)}</span></div>}</div></div>
-                {selected.status === 'claimed' && <div className="mt-5 border-t border-[#EBF0F0] pt-5"><p className="mb-3 text-[11px] font-semibold uppercase tracking-[.1em] text-[#9AABAC]">Verified claimant</p><dl className="space-y-3 text-xs">{([['Full name', selected.claimed_full_name], ['Username', selected.claimed_username], ['Email', selected.claimed_email], ['IP address', selected.claimed_ip], ['Claimed (Manila)', manilaDate(selected.claimed_at)]] as const).map(([label, value]) => <div key={label}><dt className="text-[#8C9E9F]">{label}</dt><dd className="mt-1 break-words font-semibold text-[#355057]">{value || '—'}</dd></div>)}</dl></div>}
+                {selected.status === 'claimed' && <div className="mt-5 border-t border-[#EBF0F0] pt-5"><p className="mb-3 text-[11px] font-semibold uppercase tracking-[.1em] text-[#9AABAC]">Verified claimant</p><dl className="space-y-3 text-xs">{([['Full name', selected.claimed_full_name], ['Username', selected.claimed_username], ['Email', selected.claimed_email], ['Claimed (Manila)', manilaDate(selected.claimed_at)]] as const).map(([label, value]) => <div key={label}><dt className="text-[#8C9E9F]">{label}</dt><dd className="mt-1 break-words font-semibold text-[#355057]">{value || '—'}</dd></div>)}</dl></div>}
               </> : <div className="py-14 text-center text-sm text-[#92A1A3]">Select a pass from the table to view its QR code.</div>}
             </section>
             <section className="rounded-[20px] border border-[#E0EAE8] bg-[#ECF6F2] p-5"><div className="flex items-center gap-2 font-semibold text-[#235B50]"><Icon name="shield" /> Live security controls</div><p className="mt-2 text-xs leading-5 text-[#5F837A]">Atomic reservations, one-minute holds, and Manila-based daily claim limits remain enforced by the database.</p><p className="mt-3 flex items-center gap-2 text-[11px] text-[#708E86]"><span className="h-1.5 w-1.5 rounded-full bg-[#2B9C74]" />{lastRefresh ? `Last refreshed ${new Date(lastRefresh).toLocaleTimeString('en-PH', { hour12: false, timeZone: 'Asia/Manila' })}` : 'Connecting…'} · Auto-refresh every 10s</p></section>

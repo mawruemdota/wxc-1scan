@@ -15,37 +15,27 @@ const messages: Record<string, string> = {
   invalid_key: 'This QR code is invalid or does not exist.',
   claimed: 'This QR pass has already been claimed.',
   reserved: 'Another visitor reserved this pass first. Please try again after the reservation expires.',
-  ip_claimed_today: 'This internet connection has already claimed a pass today.',
-  ip_already_reserved: 'This internet connection already has another active reservation.',
   username_not_allowed: 'That username is not on the approved player list. Your QR pass has been released.',
-  already_claimed_today: 'This username, email, or internet connection already claimed a pass today. Your QR pass has been released.',
+  already_claimed_today: 'This registered player username has already claimed a pass today. Your QR pass has been released.',
   expired: 'Your one-minute reservation expired. The pass is now available again.',
-  ip_changed: 'Your network IP address changed. Reconnect to your original network and try again before the timer expires.',
   not_session_owner: 'This browser does not own the reservation.',
   missing_session: 'Your browser session is missing. Open the QR code again.',
   invalid_request: 'Please check the details entered and try again.',
   server_error: 'The service is temporarily unavailable. Please try again.',
   forbidden: 'This request could not be verified. Reload the page and try again.',
-  too_many_requests: 'Too many requests from this connection. Please wait before trying again.',
+  too_many_requests: 'Too many requests for this QR pass or browser session. Please wait before trying again.',
   not_claimed_yet: 'No confirmed claim was found for this browser yet. You can safely check again or retry your submission.'
 };
 
-type NoticeTone = 'connection' | 'reserved' | 'claimed' | 'error';
+type NoticeTone = 'reserved' | 'claimed' | 'error';
 
 function noticeTone(reason: string): NoticeTone {
-  if (['ip_claimed_today', 'ip_already_reserved', 'ip_changed', 'too_many_requests'].includes(reason)) return 'connection';
   if (reason === 'reserved' || reason === 'not_session_owner') return 'reserved';
   if (reason === 'claimed') return 'claimed';
   return 'error';
 }
 
 const noticeStyles: Record<NoticeTone, { container: string; icon: string; heading: string; body: string }> = {
-  connection: {
-    container: 'border-red-300 bg-red-50',
-    icon: 'bg-red-100 text-red-700 ring-red-200',
-    heading: 'text-red-950',
-    body: 'text-red-900'
-  },
   reserved: {
     container: 'border-orange-300 bg-orange-50',
     icon: 'bg-orange-100 text-orange-700 ring-orange-200',
@@ -67,7 +57,7 @@ const noticeStyles: Record<NoticeTone, { container: string; icon: string; headin
 };
 
 function noticeHeading(reason: string, tone: NoticeTone) {
-  if (tone === 'connection') return <><strong className="font-black">Internet connection</strong> issue</>;
+  if (reason === 'already_claimed_today') return <>Daily <strong className="font-black">player ID</strong> limit reached</>;
   if (tone === 'reserved') return <><strong className="font-black">Reserved</strong> — pass unavailable</>;
   if (tone === 'claimed') return <>Already <strong className="font-black">claimed</strong></>;
   if (reason === 'expired') return 'Reservation expired';
@@ -78,14 +68,8 @@ function noticeHeading(reason: string, tone: NoticeTone) {
 
 function noticeDetails(reason: string) {
   switch (reason) {
-    case 'ip_claimed_today':
-      return <>This <strong className="font-extrabold">internet connection</strong> has already claimed a pass today. Only one claim per public IP address is allowed each Manila calendar day.</>;
-    case 'ip_already_reserved':
-      return <>This <strong className="font-extrabold">internet connection</strong> already has another active reservation. Wait for it to expire before scanning a different pass.</>;
-    case 'ip_changed':
-      return <>Your <strong className="font-extrabold">internet connection</strong> changed. Reconnect to your original network and try again before the timer expires.</>;
     case 'too_many_requests':
-      return <>Too many requests from this <strong className="font-extrabold">internet connection</strong>. Wait before trying again.</>;
+      return <>Too many attempts for this QR pass or browser session. Please wait before trying again.</>;
     case 'reserved':
       return <>Another visitor has <strong className="font-extrabold">reserved</strong> this QR pass. You can try again after their reservation expires.</>;
     case 'not_session_owner':
@@ -93,7 +77,7 @@ function noticeDetails(reason: string) {
     case 'claimed':
       return <>This QR pass has already been <strong className="font-extrabold">claimed</strong> and cannot be used again.</>;
     case 'already_claimed_today':
-      return <>This username, email address, or <strong className="font-extrabold">internet connection</strong> has already claimed a pass today. This QR pass has been released.</>;
+      return <>This <strong className="font-extrabold">registered player username</strong> has already claimed a pass today. Each player ID can claim once per Manila calendar day. This QR pass has been released.</>;
     default:
       return messages[reason] || 'This pass is not available.';
   }
@@ -264,7 +248,7 @@ export default function ClaimForm({ passKey }: { passKey: string }) {
           <label className="block"><span className="mb-1.5 block text-sm font-semibold">Email address</span><input className="input" maxLength={254} type="email" autoComplete="email" required value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} placeholder="you@example.com"/></label>
           <button className="btn w-full" disabled={state === 'submitting' || state === 'checking' || (state === 'ready' && remaining <= 0)}>{state === 'submitting' ? 'Verifying…' : state === 'uncertain' ? 'Retry submission safely' : 'Verify and claim pass'}</button>
         </form>
-        <p className="mt-5 text-xs leading-5 text-slate-500">One claim per username, email address, and public IP per Manila calendar day. Shared Wi-Fi may prevent multiple claims.</p>
+        <p className="mt-5 text-xs leading-5 text-slate-500">One claim per registered player username per Manila calendar day. Different players may use the same Wi-Fi network and email address.</p>
       </>}
       {state === 'success' && <div role="status" className="rounded-2xl border-2 border-emerald-300 bg-emerald-50 px-5 py-9 text-center sm:px-7">
         <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-emerald-100 text-emerald-700 ring-2 ring-emerald-200"><svg className="h-9 w-9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12.5 10 17l9-10"/></svg></div>
