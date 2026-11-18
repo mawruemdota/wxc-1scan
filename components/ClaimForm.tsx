@@ -15,7 +15,7 @@ const messages: Record<string, string> = {
   invalid_key: 'This QR code is invalid or does not exist.',
   claimed: 'This QR pass has already been claimed.',
   reserved: 'Another visitor reserved this pass first. Please try again after the reservation expires.',
-  username_not_allowed: 'That username is not on the approved player list. Your QR pass has been released.',
+  username_not_allowed: 'User not found in the current database. Your QR pass has been released.',
   already_claimed_today: 'This registered player username has already claimed a pass today. Your QR pass has been released.',
   expired: 'Your one-minute reservation expired. The pass is now available again.',
   not_session_owner: 'This browser does not own the reservation.',
@@ -57,6 +57,7 @@ const noticeStyles: Record<NoticeTone, { container: string; icon: string; headin
 };
 
 function noticeHeading(reason: string, tone: NoticeTone) {
+  if (reason === 'username_not_allowed') return <strong className="font-black">User not found in the current database</strong>;
   if (reason === 'already_claimed_today') return <>Daily <strong className="font-black">player ID</strong> limit reached</>;
   if (tone === 'reserved') return <><strong className="font-black">Reserved</strong> — pass unavailable</>;
   if (tone === 'claimed') return <>Already <strong className="font-black">claimed</strong></>;
@@ -76,6 +77,8 @@ function noticeDetails(reason: string) {
       return <>This pass is <strong className="font-extrabold">reserved</strong> by another browser session. Open it from the original browser or wait for the reservation to expire.</>;
     case 'claimed':
       return <>This QR pass has already been <strong className="font-extrabold">claimed</strong> and cannot be used again.</>;
+    case 'username_not_allowed':
+      return <>The entered username is not on the approved player list. Your QR reservation has been released. Register your player ID and try scanning an available pass again after approval.</>;
     case 'already_claimed_today':
       return <>This <strong className="font-extrabold">registered player username</strong> has already claimed a pass today. Each player ID can claim once per Manila calendar day. This QR pass has been released.</>;
     default:
@@ -116,6 +119,31 @@ export default function ClaimForm({ passKey }: { passKey: string }) {
   const [form, setForm] = useState({ fullName: '', username: '', email: '' });
   const [claimedAt, setClaimedAt] = useState('');
   const [claimReference, setClaimReference] = useState('');
+  const [registrationUrl, setRegistrationUrl] = useState<string | null>(null);
+  const [registrationLinkStatus, setRegistrationLinkStatus] = useState<'loading' | 'ready' | 'error'>('loading');
+
+  useEffect(() => {
+    if (state !== 'rejected' || reason !== 'username_not_allowed') return;
+    let active = true;
+    setRegistrationLinkStatus('loading');
+    setRegistrationUrl(null);
+    void fetch('/api/registration', { cache: 'no-store' })
+      .then(async response => {
+        if (!response.ok) throw new Error('Unable to load registration URL');
+        return await response.json() as { ok: boolean; registrationUrl?: string | null };
+      })
+      .then(result => {
+        if (!active) return;
+        setRegistrationUrl(result.ok && typeof result.registrationUrl === 'string' ? result.registrationUrl : null);
+        setRegistrationLinkStatus('ready');
+      })
+      .catch(() => {
+        if (!active) return;
+        setRegistrationUrl(null);
+        setRegistrationLinkStatus('error');
+      });
+    return () => { active = false; };
+  }, [state, reason]);
 
   function showReceipt(result: ApiResult) {
     setClaimedAt(result.claimed_at || '');
@@ -260,6 +288,21 @@ export default function ClaimForm({ passKey }: { passKey: string }) {
       </div>}
       {state === 'rejected' && <div className="py-4">
         <ScanNotice reason={reason} retryAfter={retryAfter} />
+        {reason === 'username_not_allowed' && <div className="mt-4 space-y-2">
+          {registrationLinkStatus === 'ready' && registrationUrl ?
+            <a href={registrationUrl} target="_blank" rel="noopener noreferrer" className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-[#136A58] px-5 py-3.5 text-sm font-extrabold text-white shadow-sm transition hover:bg-[#0C5244] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#136A58]">
+              Register here
+              <svg aria-hidden="true" className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M7 17 17 7m-8 0h8v8"/></svg>
+            </a> :
+            <button type="button" disabled aria-disabled="true" className="w-full cursor-not-allowed rounded-xl bg-slate-300 px-5 py-3.5 text-sm font-bold text-slate-600">Register here</button>}
+          {registrationLinkStatus === 'loading' ?
+            <p className="text-center text-xs text-slate-500">Loading registration link…</p> :
+            registrationLinkStatus === 'error' ?
+            <p className="text-center text-xs text-red-700">Registration link is temporarily unavailable. Please contact the organizer.</p> :
+            !registrationUrl ?
+            <p className="text-center text-xs text-slate-500">Registration link has not been configured by the organizer.</p> :
+            <p className="text-center text-xs text-slate-500">Opens the registration page in a new tab.</p>}
+        </div>}
         {reason === 'too_many_requests' ? <button type="button" className="btn mt-5 w-full" onClick={() => void attemptLock()}>Try again</button> :
           <p className="mt-4 text-center text-xs leading-5 text-slate-500">If this pass was released, open the QR link again to retry.</p>}
       </div>}

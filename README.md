@@ -5,7 +5,7 @@
 The Vercel app uses the existing **1xb** Supabase database (project ref `cedxzjijdboojwjvkxqv`), **not** a new Supabase project. To avoid altering the earlier 1xb QR application, 1scan's tables and SQL functions have a `one_scan_` prefix in the existing `public` schema.
 
 The applied SQL is saved in `supabase/1xb_shared/` in execution order:
-`01_initial.sql`, `02_critical_fixes.sql`, `03_admin_dashboard.sql`, `04_one_minute_reservation.sql`, and `05_username_only_daily_claims.sql`.
+`01_initial.sql`, `02_critical_fixes.sql`, `03_admin_dashboard.sql`, `04_one_minute_reservation.sql`, `05_username_only_daily_claims.sql`, and `06_registration_link_setting.sql`.
 Rollback-only test scripts are in `supabase/1xb_shared/tests/`.
 These migrations have already been applied to 1xb through Supabase; **do not rerun** them on 1xb.
 
@@ -35,6 +35,16 @@ A Next.js 15 App Router/TypeScript/Tailwind web app with **Supabase PostgreSQL**
 - Concurrent first-load requests from separate tabs cannot overwrite a successful reservation cookie: only a successful lock/resume writes `qr_session`.
 - Lost claim responses can be recovered: `claim_pass` is idempotent for its original session, `/api/receipt` checks recorded claims without changing them, and reopening a claimed QR from its original session displays the receipt.
 - Public `/api/lock`, `/api/claim`, and `/api/receipt` are database-rate-limited by QR pass key or browser session (hashed before storage), not public IP. Limits are **15/min + 100/hour for locks, 8/min + 40/hour for claims, and 30/min + 200/hour for receipt checks**.
+
+## Registration link configuration (administrator)
+
+- Go to **Admin → Registered players → Registration link**.
+- Paste the full `https://` (or `http://`) registration page address and select **Save registration link**.
+- If a claimant submits a username absent from `one_scan_allowed_players`, the page displays **“User not found in the current database”** and an external **Register here** button.
+- If no URL is configured, the button is visible but disabled with an explanatory message. Clearing and saving the link disables it again.
+- The public `GET /api/registration` route exposes **only** the registration URL. Changing it requires the authenticated admin `POST /api/registration` route with same-origin checks.
+- An invalid username still releases its 60-second QR reservation, as before. A player must scan an available pass after being added to the allow-list.
+- The URL is saved in the RLS-protected `one_scan_settings` table. The `06_registration_link_setting.sql` migration has already been applied to shared 1xb; do not rerun it there.
 
 ## 1. Install locally
 
@@ -104,6 +114,8 @@ To verify claims, log in, import a CSV with a `username` column, and generate a 
 | `/api/lock` | POST | `{key}`; exclusive, server-timed reservation |
 | `/api/claim` | POST | `{key,fullName,username,email}`; final claim or idempotent re-claim by original session |
 | `/api/receipt?key=...` | GET | Read-only receipt recovery for the original claimant session |
+| `/api/registration` | GET | Public registration-button URL only |
+| `/api/registration` | POST | Authenticated admin-only registration URL update |
 
 All mutating routes check same-origin `Origin`. Session tokens are random 256-bit cookie values; the raw token is never exposed to the browser JavaScript.
 

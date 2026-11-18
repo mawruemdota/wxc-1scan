@@ -93,7 +93,7 @@ function Metric({ label, value, icon, variant = 'default' }: { label: string; va
 export default function AdminDashboard({ initiallyAuthenticated }: { initiallyAuthenticated: boolean }) {
   const [authed, setAuthed] = useState(initiallyAuthenticated);
   const [password, setPassword] = useState('');
-  const [busy, setBusy] = useState<'login' | 'generate' | 'import' | 'export' | 'zip' | null>(null);
+  const [busy, setBusy] = useState<'login' | 'generate' | 'import' | 'export' | 'zip' | 'registration' | null>(null);
   const [notice, setNotice] = useState('');
   const [error, setError] = useState('');
   const [data, setData] = useState<AdminData | null>(null);
@@ -114,6 +114,10 @@ export default function AdminDashboard({ initiallyAuthenticated }: { initiallyAu
   const [invalidUsernames, setInvalidUsernames] = useState(0);
   const [importMode, setImportMode] = useState<'merge' | 'replace'>('merge');
   const [confirmReplace, setConfirmReplace] = useState(false);
+  const [registrationUrl, setRegistrationUrl] = useState('');
+  const [savedRegistrationUrl, setSavedRegistrationUrl] = useState('');
+  const [registrationLoaded, setRegistrationLoaded] = useState(false);
+  const [registrationLoading, setRegistrationLoading] = useState(false);
   const [mobileNav, setMobileNav] = useState(false);
   const requestSerial = useRef(0);
   const genInput = useRef<HTMLInputElement | null>(null);
@@ -166,6 +170,58 @@ export default function AdminDashboard({ initiallyAuthenticated }: { initiallyAu
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
   }, [generationOpen]);
+
+  useEffect(() => {
+    if (!authed || activeArea !== 'players') return;
+    let active = true;
+    setRegistrationLoading(true);
+    void fetch('/api/registration', { cache: 'no-store' })
+      .then(async response => {
+        if (!response.ok) throw new Error('Unable to load registration link');
+        return await response.json() as { ok: boolean; registrationUrl?: string | null };
+      })
+      .then(result => {
+        if (!active) return;
+        if (!result.ok) throw new Error('Unable to load registration link');
+        const url = result.registrationUrl || '';
+        setSavedRegistrationUrl(url);
+        setRegistrationUrl(url);
+        setRegistrationLoaded(true);
+      })
+      .catch(() => {
+        if (active) { setRegistrationLoaded(false); setError('Unable to load registration link settings.'); }
+      })
+      .finally(() => { if (active) setRegistrationLoading(false); });
+    return () => { active = false; };
+  }, [authed, activeArea]);
+
+  async function saveRegistrationUrl(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    if (busy !== null) return;
+    setBusy('registration'); setError(''); setNotice('');
+    try {
+      const response = await fetch('/api/registration', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ registrationUrl: registrationUrl.trim() })
+      });
+      const result = await response.json() as { ok: boolean; reason?: string; registrationUrl?: string | null };
+      if (!response.ok || !result.ok) {
+        if (result.reason === 'invalid_url') throw new Error('Enter a valid http:// or https:// registration URL (up to 2,048 characters).');
+        throw new Error('Unable to save the registration link.');
+      }
+      const saved = result.registrationUrl || '';
+      setRegistrationUrl(saved);
+      setSavedRegistrationUrl(saved);
+      setNotice(saved
+        ? 'Registration link saved. It will appear when a username is not found.'
+        : 'Registration link cleared. The Register here button stays disabled until a link is added.');
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'Unable to update registration link.');
+    } finally {
+      setBusy(null);
+    }
+  }
 
   async function login(e: FormEvent) {
     e.preventDefault(); setBusy('login'); setError('');
@@ -386,7 +442,23 @@ export default function AdminDashboard({ initiallyAuthenticated }: { initiallyAu
               <div className="mt-5 flex flex-wrap gap-3"><button disabled={busy !== null || (importMode === 'replace' && (!confirmReplace || invalidUsernames > 0))} onClick={() => void importNames()} type="button" className="admin-primary-button">{busy === 'import' ? 'Importing…' : importMode === 'replace' ? `Replace with ${pendingNames.length.toLocaleString()} usernames` : `Import ${pendingNames.length.toLocaleString()} usernames`}</button><button type="button" className="admin-quiet-button" onClick={() => { setPendingNames([]); setUploadFile(''); setConfirmReplace(false); setInvalidUsernames(0); }}>Discard</button></div></div>}
             <div className="mt-6 flex items-start gap-3 rounded-xl bg-[#F3F8F6] p-4 text-sm text-[#638177]"><Icon name="shield" className="mt-0.5 h-5 w-5 flex-shrink-0" /><p><strong className="text-[#386E5D]">Controlled synchronization.</strong> Names are trimmed, lowercased, and deduplicated. Merge keeps existing names; Replace performs an atomic database update after explicit confirmation.</p></div>
           </section>
-          <section className="space-y-5"><div className="rounded-[22px] border border-[#E1E9E9] bg-white p-6"><p className="text-sm font-medium text-[#7D9194]">Registered usernames</p><p className="mt-3 text-4xl font-bold tracking-tight text-[#163B3F]">{data ? data.allowedPlayerCount.toLocaleString() : '—'}</p><p className="mt-2 text-xs text-[#8B9C9F]">Eligible for claim verification</p></div><div className="rounded-[20px] border border-[#E1E9E9] bg-white p-6"><h3 className="text-base font-bold">Sample file format</h3><pre className="mt-4 overflow-x-auto rounded-xl bg-[#17343A] p-4 text-xs leading-6 text-[#DBF6EB]">username{'\n'}player_one{'\n'}player_two{'\n'}player_three</pre><p className="mt-3 text-xs leading-5 text-[#899A9C]">The first column is used if a CSV does not contain a username header. Existing entries remain unchanged.</p></div></section>
+          <section className="space-y-5"><div className="rounded-[22px] border border-[#E1E9E9] bg-white p-6"><p className="text-sm font-medium text-[#7D9194]">Registered usernames</p><p className="mt-3 text-4xl font-bold tracking-tight text-[#163B3F]">{data ? data.allowedPlayerCount.toLocaleString() : '—'}</p><p className="mt-2 text-xs text-[#8B9C9F]">Eligible for claim verification</p></div><div className="rounded-[20px] border border-[#E1E9E9] bg-white p-6"><h3 className="text-base font-bold">Sample file format</h3><pre className="mt-4 overflow-x-auto rounded-xl bg-[#17343A] p-4 text-xs leading-6 text-[#DBF6EB]">username{'\n'}player_one{'\n'}player_two{'\n'}player_three</pre><p className="mt-3 text-xs leading-5 text-[#899A9C]">The first column is used if a CSV does not contain a username header. Existing entries remain unchanged.</p></div>
+              <div className="rounded-[20px] border border-[#E1E9E9] bg-white p-6">
+                <div className="flex items-center gap-2"><Icon name="key" className="h-5 w-5 text-[#27816B]" /><h3 className="text-base font-bold text-[#173B40]">Registration link</h3></div>
+                <p className="mt-2 text-xs leading-5 text-[#7C9295]">When a submitted player username is not found, the scan page shows “User not found in the current database” and a Register here button pointing to this URL.</p>
+                <form onSubmit={saveRegistrationUrl} className="mt-5 space-y-3">
+                  <label htmlFor="registration-link" className="block text-xs font-semibold text-[#36575B]">Registration page URL</label>
+                  <input id="registration-link" className="input text-sm" type="url" inputMode="url" placeholder="https://your-registration-page.example" maxLength={2048} value={registrationUrl} onChange={e => setRegistrationUrl(e.target.value)} disabled={!registrationLoaded || registrationLoading || busy === 'registration'} />
+                  <p className="text-xs leading-5 text-[#849A9B]">Use an http:// or https:// link. Leave blank and save to disable the button until a link is available.</p>
+                  <button className="admin-primary-button w-full justify-center" type="submit" disabled={!registrationLoaded || registrationLoading || busy !== null}>
+                    <Icon name="check" />{busy === 'registration' ? 'Saving…' : 'Save registration link'}
+                  </button>
+                </form>
+                {registrationLoading && <p className="mt-3 text-xs text-[#819697]">Loading saved link…</p>}
+                {savedRegistrationUrl && <a href={savedRegistrationUrl} target="_blank" rel="noopener noreferrer" className="mt-3 inline-flex items-center gap-1 break-all text-xs font-semibold text-[#176958] underline underline-offset-2">Open saved registration page</a>}
+                {registrationLoaded && !savedRegistrationUrl && <p className="mt-3 text-xs text-[#889A9C]">No registration link configured yet.</p>}
+              </div>
+            </section>
         </div>}
         <footer className="mt-8 flex flex-wrap items-center justify-between gap-2 border-t border-[#E2ECEB] pt-5 text-[11px] text-[#91A2A4]"><span>1scan · Administrative control center</span><span>Private player data · Asia/Manila timezone</span></footer>
       </div>
